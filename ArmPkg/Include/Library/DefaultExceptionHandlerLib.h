@@ -2,18 +2,12 @@
 
   Copyright (c) 2008 - 2010, Apple Inc. All rights reserved.<BR>
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __DEFAULT_EXCEPTION_HANDLER_LIB_H__
-#define __DEFAULT_EXCEPTION_HANDLER_LIB_H__
+#ifndef DEFAULT_EXCEPTION_HANDLER_LIB_H_
+#define DEFAULT_EXCEPTION_HANDLER_LIB_H_
 
 /**
   This is the default action to take on an unexpected exception
@@ -24,8 +18,8 @@
 **/
 VOID
 DefaultExceptionHandler (
-  IN     EFI_EXCEPTION_TYPE           ExceptionType,
-  IN OUT EFI_SYSTEM_CONTEXT           SystemContext
+  IN     EFI_EXCEPTION_TYPE  ExceptionType,
+  IN OUT EFI_SYSTEM_CONTEXT  SystemContext
   );
 
-#endif
+#endif // DEFAULT_EXCEPTION_HANDLER_LIB_H_

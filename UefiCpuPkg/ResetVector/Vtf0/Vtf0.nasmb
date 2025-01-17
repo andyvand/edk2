@@ -2,14 +2,8 @@
 ; @file
 ; This file includes all other code files to assemble the reset vector code
 ;
-; Copyright (c) 2008 - 2013, Intel Corporation. All rights reserved.<BR>
-; This program and the accompanying materials
-; are licensed and made available under the terms and conditions of the BSD License
-; which accompanies this distribution.  The full text of the license may be found at
-; http://opensource.org/licenses/bsd-license.php
-;
-; THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-; WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+; Copyright (c) 2008 - 2023, Intel Corporation. All rights reserved.<BR>
+; SPDX-License-Identifier: BSD-2-Clause-Patent
 ;
 ;------------------------------------------------------------------------------
 
@@ -41,8 +35,10 @@
 
 %include "PostCodes.inc"
 
+%include "PageTables.inc"
+
 %ifdef ARCH_X64
-%include "X64/PageTables.asm"
+  %include "X64/PageTables.asm"
 %endif
 
 %ifdef DEBUG_PORT80

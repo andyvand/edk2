@@ -2,13 +2,9 @@
   Module to clarify the element info of the smbios structure.
 
   Copyright (c) 2005 - 2015, Intel Corporation. All rights reserved.<BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  (C) Copyright 2017 - 2019 Hewlett Packard Enterprise Development LP<BR>
+  Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -27,8 +23,8 @@ extern UINT8  SmbiosMinorVersion;
 //
 // SHOW_ALL: WaitEnter() not wait input.
 //
-#define SHOW_ALL          0x04
-#define SHOW_STATISTICS   0x05
+#define SHOW_ALL         0x04
+#define SHOW_STATISTICS  0x05
 
 #define AS_UINT16(pData)  (*((UINT16 *) pData))
 #define AS_UINT32(pData)  (*((UINT32 *) pData))
@@ -94,8 +90,8 @@ DisplayBiosCharacteristics (
 **/
 VOID
 DisplayBiosCharacteristicsExt1 (
-  IN UINT8 Byte1,
-  IN UINT8 Option
+  IN UINT8  Byte1,
+  IN UINT8  Option
   );
 
 /**
@@ -106,8 +102,8 @@ DisplayBiosCharacteristicsExt1 (
 **/
 VOID
 DisplayBiosCharacteristicsExt2 (
-  IN UINT8 Byte2,
-  IN UINT8 Option
+  IN UINT8  Byte2,
+  IN UINT8  Option
   );
 
 /**
@@ -118,8 +114,8 @@ DisplayBiosCharacteristicsExt2 (
 **/
 VOID
 DisplayProcessorFamily (
-  UINT8 Family,
-  UINT8 Option
+  UINT8  Family,
+  UINT8  Option
   );
 
 /**
@@ -130,8 +126,8 @@ DisplayProcessorFamily (
 **/
 VOID
 DisplayProcessorFamily2 (
-  IN UINT16 Family2,
-  IN UINT8  Option
+  IN UINT16  Family2,
+  IN UINT8   Option
   );
 
 /**
@@ -158,8 +154,8 @@ DisplayProcessorFamily2 (
 **/
 VOID
 DisplayProcessorVoltage (
-  IN UINT8 Voltage,
-  IN UINT8 Option
+  IN UINT8  Voltage,
+  IN UINT8  Option
   );
 
 /**
@@ -184,8 +180,8 @@ Bits 2:0 CPU Status
 **/
 VOID
 DisplayProcessorStatus (
-  IN UINT8 Status,
-  IN UINT8 Option
+  IN UINT8  Status,
+  IN UINT8  Option
   );
 
 /**
@@ -197,9 +193,9 @@ DisplayProcessorStatus (
 **/
 VOID
 DisplayMaxMemoryModuleSize (
-  IN UINT8 Size,
-  IN UINT8 SlotNum,
-  IN UINT8 Option
+  IN UINT8  Size,
+  IN UINT8  SlotNum,
+  IN UINT8  Option
   );
 
 /**
@@ -211,9 +207,9 @@ DisplayMaxMemoryModuleSize (
 **/
 VOID
 DisplayMemoryModuleConfigHandles (
-  IN UINT16 *Handles,
-  IN UINT8  SlotNum,
-  IN UINT8  Option
+  IN UINT16  *Handles,
+  IN UINT8   SlotNum,
+  IN UINT8   Option
   );
 
 /**
@@ -224,8 +220,8 @@ DisplayMemoryModuleConfigHandles (
 **/
 VOID
 DisplayMmBankConnections (
-  IN UINT8 BankConnections,
-  IN UINT8 Option
+  IN UINT8  BankConnections,
+  IN UINT8  Option
   );
 
 /**
@@ -244,8 +240,8 @@ DisplayMmBankConnections (
 **/
 VOID
 DisplayMmMemorySize (
-  IN UINT8 Size,
-  IN UINT8 Option
+  IN UINT8  Size,
+  IN UINT8  Option
   );
 
 /**
@@ -278,8 +274,8 @@ Bits 2:0 Cache Level
 **/
 VOID
 DisplayCacheConfiguration (
-  IN UINT16 CacheConfiguration,
-  IN UINT8 Option
+  IN UINT16  CacheConfiguration,
+  IN UINT8   Option
   );
 
 /**
@@ -344,8 +340,8 @@ DisplaySBDSManufactureDate (
 **/
 VOID
 DisplaySystemResetCapabilities (
-  IN UINT8 Reset,
-  IN UINT8 Option
+  IN UINT8  Reset,
+  IN UINT8  Option
   );
 
 /**
@@ -380,8 +376,8 @@ DisplaySystemResetCapabilities (
 **/
 VOID
 DisplayHardwareSecuritySettings (
-  IN UINT8 Settings,
-  IN UINT8 Option
+  IN UINT8  Settings,
+  IN UINT8  Option
   );
 
 /**
@@ -392,8 +388,8 @@ DisplayHardwareSecuritySettings (
 **/
 VOID
 DisplayOBRAConnections (
-  IN UINT8   Connections,
-  IN UINT8   Option
+  IN UINT8  Connections,
+  IN UINT8  Option
   );
 
 /**
@@ -404,8 +400,8 @@ DisplayOBRAConnections (
 **/
 VOID
 DisplaySystemBootStatus (
-  IN UINT8 Parameter,
-  IN UINT8 Option
+  IN UINT8  Parameter,
+  IN UINT8  Option
   );
 
 /**
@@ -418,6 +414,54 @@ VOID
 DisplaySPSCharacteristics (
   IN UINT16  Characteristics,
   IN UINT8   Option
+  );
+
+/**
+  Display TPM Device (Type 43) Characteristics.
+
+  @param[in] Chara    The information bits.
+  @param[in] Option   The optional information.
+**/
+VOID
+DisplayTpmDeviceCharacteristics (
+  IN UINT64  Chara,
+  IN UINT8   Option
+  );
+
+/**
+  Display Processor Architecture Type (Type 44).
+
+  @param[in] Key            The key of the structure.
+  @param[in] Option         The optional information.
+**/
+VOID
+DisplayProcessorArchitectureType (
+  IN UINT8  Key,
+  IN UINT8  Option
+  );
+
+/**
+  Display Firmware Characteristics (Type 45) details.
+
+  @param[in] Chara    The information bits.
+  @param[in] Option   The optional information.
+**/
+VOID
+DisplayFirmwareCharacteristics (
+  IN UINT16  Chara,
+  IN UINT8   Option
+  );
+
+/**
+  Display Firmware state (Type 45) details.
+
+  @param[in] Key            The key of the structure.
+  @param[in] Option         The optional information.
+**/
+VOID
+DisplayFirmwareState (
+  IN UINT8  Key,
+  IN UINT8  Option
   );
 
 #endif

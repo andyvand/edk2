@@ -2,19 +2,12 @@
   Load/boot UEFI Linux.
 
   Copyright (c) 2011 - 2013, Intel Corporation. All rights reserved.<BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #ifndef __LOAD_LINUX_LIB__
 #define __LOAD_LINUX_LIB__
-
 
 /**
   Verifies that the kernel setup image is valid and supported.
@@ -32,10 +25,9 @@
 EFI_STATUS
 EFIAPI
 LoadLinuxCheckKernelSetup (
-  IN VOID        *KernelSetup,
-  IN UINTN       KernelSetupSize
+  IN VOID   *KernelSetup,
+  IN UINTN  KernelSetupSize
   );
-
 
 /**
   Gets the initial runtime size of the Linux kernel image by examining
@@ -44,7 +36,7 @@ LoadLinuxCheckKernelSetup (
   @param[in]     KernelSetup - The kernel setup image
   @param[in]     KernelSize - The kernel size on disk.
 
-  @retval    0                An error occured
+  @retval    0                An error occurred
   @retval    !0               The initial size required by the kernel to
                               begin execution.
 
@@ -52,10 +44,9 @@ LoadLinuxCheckKernelSetup (
 UINTN
 EFIAPI
 LoadLinuxGetKernelSize (
-  IN VOID        *KernelSetup,
-  IN UINTN       KernelSize
+  IN VOID   *KernelSetup,
+  IN UINTN  KernelSize
   );
-
 
 /**
   Loads and boots UEFI Linux.
@@ -77,7 +68,6 @@ LoadLinux (
   IN OUT VOID  *KernelSetup
   );
 
-
 /**
   Allocates pages for the kernel setup image.
 
@@ -87,12 +77,11 @@ LoadLinux (
   @retval    !NULL - The address of the pages allocated
 
 **/
-VOID*
+VOID *
 EFIAPI
 LoadLinuxAllocateKernelSetupPages (
-  IN UINTN                  Pages
+  IN UINTN  Pages
   );
-
 
 /**
   Clears the uninitialised space before and after the struct setup_header
@@ -111,7 +100,7 @@ LoadLinuxAllocateKernelSetupPages (
 EFI_STATUS
 EFIAPI
 LoadLinuxInitializeKernelSetup (
-  IN VOID        *KernelSetup
+  IN VOID  *KernelSetup
   );
 
 /**
@@ -125,13 +114,12 @@ LoadLinuxInitializeKernelSetup (
   @retval    !NULL - The address of the pages allocated
 
 **/
-VOID*
+VOID *
 EFIAPI
 LoadLinuxAllocateKernelPages (
-  IN VOID                   *KernelSetup,
-  IN UINTN                  Pages
+  IN VOID   *KernelSetup,
+  IN UINTN  Pages
   );
-
 
 /**
   Allocates pages for the kernel command line.
@@ -142,12 +130,11 @@ LoadLinuxAllocateKernelPages (
   @retval    !NULL - The address of the pages allocated
 
 **/
-VOID*
+VOID *
 EFIAPI
 LoadLinuxAllocateCommandLinePages (
-  IN UINTN                  Pages
+  IN UINTN  Pages
   );
-
 
 /**
   Allocates pages for the initrd image.
@@ -159,13 +146,12 @@ LoadLinuxAllocateCommandLinePages (
   @retval    !NULL - The address of the pages allocated
 
 **/
-VOID*
+VOID *
 EFIAPI
 LoadLinuxAllocateInitrdPages (
-  IN VOID                   *KernelSetup,
-  IN UINTN                  Pages
+  IN VOID   *KernelSetup,
+  IN UINTN  Pages
   );
-
 
 /**
   Sets the kernel command line parameter within the setup image.
@@ -181,10 +167,9 @@ LoadLinuxAllocateInitrdPages (
 EFI_STATUS
 EFIAPI
 LoadLinuxSetCommandLine (
-  IN OUT VOID    *KernelSetup,
-  IN CHAR8       *CommandLine
+  IN OUT VOID  *KernelSetup,
+  IN CHAR8     *CommandLine
   );
-
 
 /**
   Sets the kernel initial ram disk pointer within the setup image.
@@ -201,11 +186,9 @@ LoadLinuxSetCommandLine (
 EFI_STATUS
 EFIAPI
 LoadLinuxSetInitrd (
-  IN OUT VOID    *KernelSetup,
-  IN VOID        *Initrd,
-  IN UINTN       InitrdSize
+  IN OUT VOID  *KernelSetup,
+  IN VOID      *Initrd,
+  IN UINTN     InitrdSize
   );
 
-
 #endif
-

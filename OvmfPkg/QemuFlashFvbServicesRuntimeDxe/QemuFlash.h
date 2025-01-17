@@ -2,13 +2,8 @@
   OVMF support for QEMU system firmware flash device
 
   Copyright (c) 2009 - 2013, Intel Corporation. All rights reserved.<BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
 
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -16,6 +11,8 @@
 #define __QEMU_FLASH_H__
 
 #include <Protocol/FirmwareVolumeBlock.h>
+
+extern UINT8  *mFlashBase;
 
 /**
   Read from QEMU Flash
@@ -29,12 +26,11 @@
 **/
 EFI_STATUS
 QemuFlashRead (
-  IN        EFI_LBA                              Lba,
-  IN        UINTN                                Offset,
-  IN        UINTN                                *NumBytes,
-  IN        UINT8                                *Buffer
+  IN        EFI_LBA  Lba,
+  IN        UINTN    Offset,
+  IN        UINTN    *NumBytes,
+  IN        UINT8    *Buffer
   );
-
 
 /**
   Write to QEMU Flash
@@ -48,12 +44,11 @@ QemuFlashRead (
 **/
 EFI_STATUS
 QemuFlashWrite (
-  IN        EFI_LBA                              Lba,
-  IN        UINTN                                Offset,
-  IN        UINTN                                *NumBytes,
-  IN        UINT8                                *Buffer
+  IN        EFI_LBA  Lba,
+  IN        UINTN    Offset,
+  IN        UINTN    *NumBytes,
+  IN        UINT8    *Buffer
   );
-
 
 /**
   Erase a QEMU Flash block
@@ -63,9 +58,8 @@ QemuFlashWrite (
 **/
 EFI_STATUS
 QemuFlashEraseBlock (
-  IN   EFI_LBA      Lba
+  IN   EFI_LBA  Lba
   );
-
 
 /**
   Initializes QEMU flash memory support
@@ -79,11 +73,29 @@ QemuFlashInitialize (
   VOID
   );
 
-
 VOID
 QemuFlashConvertPointers (
   VOID
   );
 
-#endif
+VOID
+QemuFlashBeforeProbe (
+  IN  EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN  UINTN                 FdBlockSize,
+  IN  UINTN                 FdBlockCount
+  );
 
+/**
+  Write to QEMU Flash
+
+  @param[in] Ptr    Pointer to the location to write.
+  @param[in] Value  The value to write.
+
+**/
+VOID
+QemuFlashPtrWrite (
+  IN        volatile UINT8  *Ptr,
+  IN        UINT8           Value
+  );
+
+#endif

@@ -4,14 +4,9 @@
   HTTP Service Binding Protocol (HTTPSB)
   HTTP Protocol (HTTP)
 
-  Copyright (c) 2015, Intel Corporation. All rights reserved.<BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution. The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  Copyright (c) 2016 - 2018, Intel Corporation. All rights reserved.<BR>
+  (C) Copyright 2015-2017 Hewlett Packard Enterprise Development LP<BR>
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
   @par Revision Reference:
   This Protocol is introduced in UEFI Specification 2.5
@@ -54,7 +49,8 @@ typedef enum {
   HttpMethodHead,
   HttpMethodPut,
   HttpMethodDelete,
-  HttpMethodTrace
+  HttpMethodTrace,
+  HttpMethodMax
 } EFI_HTTP_METHOD;
 
 ///
@@ -71,7 +67,7 @@ typedef enum {
   HTTP_STATUS_204_NO_CONTENT,
   HTTP_STATUS_205_RESET_CONTENT,
   HTTP_STATUS_206_PARTIAL_CONTENT,
-  HTTP_STATUS_300_MULTIPLE_CHIOCES,
+  HTTP_STATUS_300_MULTIPLE_CHOICES,
   HTTP_STATUS_301_MOVED_PERMANENTLY,
   HTTP_STATUS_302_FOUND,
   HTTP_STATUS_303_SEE_OTHER,
@@ -93,15 +89,17 @@ typedef enum {
   HTTP_STATUS_412_PRECONDITION_FAILED,
   HTTP_STATUS_413_REQUEST_ENTITY_TOO_LARGE,
   HTTP_STATUS_414_REQUEST_URI_TOO_LARGE,
-  HTTP_STATUS_415_UNSUPPORETD_MEDIA_TYPE,
+  HTTP_STATUS_415_UNSUPPORTED_MEDIA_TYPE,
   HTTP_STATUS_416_REQUESTED_RANGE_NOT_SATISFIED,
   HTTP_STATUS_417_EXPECTATION_FAILED,
   HTTP_STATUS_500_INTERNAL_SERVER_ERROR,
-  HTTP_STATUS_501_NOT_IMIPLEMENTED,
+  HTTP_STATUS_501_NOT_IMPLEMENTED,
   HTTP_STATUS_502_BAD_GATEWAY,
   HTTP_STATUS_503_SERVICE_UNAVAILABLE,
   HTTP_STATUS_504_GATEWAY_TIME_OUT,
-  HTTP_STATUS_505_HTTP_VERSION_NOT_SUPPORTED
+  HTTP_STATUS_505_HTTP_VERSION_NOT_SUPPORTED,
+  HTTP_STATUS_308_PERMANENT_REDIRECT,
+  HTTP_STATUS_429_TOO_MANY_REQUESTS
 } EFI_HTTP_STATUS_CODE;
 
 ///
@@ -111,24 +109,24 @@ typedef struct {
   ///
   /// Set to TRUE to instruct the EFI HTTP instance to use the default address
   /// information in every TCP connection made by this instance. In addition, when set
-  /// to TRUE, LocalAddress, LocalSubnet, and LocalPort are ignored.
+  /// to TRUE, LocalAddress and LocalSubnet are ignored.
   ///
-  BOOLEAN                       UseDefaultAddress;
+  BOOLEAN             UseDefaultAddress;
   ///
   /// If UseDefaultAddress is set to FALSE, this defines the local IP address to be
   /// used in every TCP connection opened by this instance.
   ///
-  EFI_IPv4_ADDRESS              LocalAddress;
+  EFI_IPv4_ADDRESS    LocalAddress;
   ///
   /// If UseDefaultAddress is set to FALSE, this defines the local subnet to be used
   /// in every TCP connection opened by this instance.
   ///
-  EFI_IPv4_ADDRESS              LocalSubnet;
+  EFI_IPv4_ADDRESS    LocalSubnet;
   ///
-  /// If UseDefaultAddress is set to FALSE, this defines the local port to be used in
+  /// This defines the local port to be used in
   /// every TCP connection opened by this instance.
   ///
-  UINT16                        LocalPort;
+  UINT16              LocalPort;
 } EFI_HTTPv4_ACCESS_POINT;
 
 ///
@@ -138,45 +136,44 @@ typedef struct {
   ///
   /// Local IP address to be used in every TCP connection opened by this instance.
   ///
-  EFI_IPv6_ADDRESS              LocalAddress;
+  EFI_IPv6_ADDRESS    LocalAddress;
   ///
   /// Local port to be used in every TCP connection opened by this instance.
   ///
-  UINT16                        LocalPort;
+  UINT16              LocalPort;
 } EFI_HTTPv6_ACCESS_POINT;
 
 ///
 /// EFI_HTTP_CONFIG_DATA_ACCESS_POINT
 ///
 
-
 typedef struct {
   ///
   /// HTTP version that this instance will support.
   ///
-  EFI_HTTP_VERSION                   HttpVersion;
+  EFI_HTTP_VERSION    HttpVersion;
   ///
   /// Time out (in milliseconds) when blocking for requests.
   ///
-  UINT32                             TimeOutMillisec;
+  UINT32              TimeOutMillisec;
   ///
   /// Defines behavior of EFI DNS and TCP protocols consumed by this instance. If
   /// FALSE, this instance will use EFI_DNS4_PROTOCOL and EFI_TCP4_PROTOCOL. If TRUE,
   /// this instance will use EFI_DNS6_PROTOCOL and EFI_TCP6_PROTOCOL.
   ///
-  BOOLEAN                            LocalAddressIsIPv6;
+  BOOLEAN             LocalAddressIsIPv6;
 
   union {
     ///
     /// When LocalAddressIsIPv6 is FALSE, this points to the local address, subnet, and
     /// port used by the underlying TCP protocol.
     ///
-    EFI_HTTPv4_ACCESS_POINT          *IPv4Node;
+    EFI_HTTPv4_ACCESS_POINT    *IPv4Node;
     ///
     /// When LocalAddressIsIPv6 is TRUE, this points to the local IPv6 address and port
     /// used by the underlying TCP protocol.
     ///
-    EFI_HTTPv6_ACCESS_POINT          *IPv6Node;
+    EFI_HTTPv6_ACCESS_POINT    *IPv6Node;
   } AccessPoint;
 } EFI_HTTP_CONFIG_DATA;
 
@@ -187,14 +184,14 @@ typedef struct {
   ///
   /// The HTTP method (e.g. GET, POST) for this HTTP Request.
   ///
-  EFI_HTTP_METHOD               Method;
+  EFI_HTTP_METHOD    Method;
   ///
   /// The URI of a remote host. From the information in this field, the HTTP instance
   /// will be able to determine whether to use HTTP or HTTPS and will also be able to
   /// determine the port number to use. If no port number is specified, port 80 (HTTP)
   /// is assumed. See RFC 3986 for more details on URI syntax.
   ///
-  CHAR16                        *Url;
+  CHAR16             *Url;
 } EFI_HTTP_REQUEST_DATA;
 
 ///
@@ -204,7 +201,7 @@ typedef struct {
   ///
   /// Response status code returned by the remote host.
   ///
-  EFI_HTTP_STATUS_CODE          StatusCode;
+  EFI_HTTP_STATUS_CODE    StatusCode;
 } EFI_HTTP_RESPONSE_DATA;
 
 ///
@@ -215,12 +212,12 @@ typedef struct {
   /// Null terminated string which describes a field name. See RFC 2616 Section 14 for
   /// detailed information about field names.
   ///
-  CHAR8                         *FieldName;
+  CHAR8    *FieldName;
   ///
   /// Null terminated string which describes the corresponding field value. See RFC 2616
   /// Section 14 for detailed information about field values.
   ///
-  CHAR8                         *FieldValue;
+  CHAR8    *FieldValue;
 } EFI_HTTP_HEADER;
 
 ///
@@ -235,36 +232,35 @@ typedef struct {
     /// When the token is used to send a HTTP request, Request is a pointer to storage that
     /// contains such data as URL and HTTP method.
     ///
-    EFI_HTTP_REQUEST_DATA       *Request;
+    EFI_HTTP_REQUEST_DATA     *Request;
     ///
     /// When used to await a response, Response points to storage containing HTTP response
     /// status code.
     ///
-    EFI_HTTP_RESPONSE_DATA      *Response;
+    EFI_HTTP_RESPONSE_DATA    *Response;
   } Data;
   ///
   /// Number of HTTP header structures in Headers list. On request, this count is
   /// provided by the caller. On response, this count is provided by the HTTP driver.
   ///
-  UINTN                         HeaderCount;
+  UINTN              HeaderCount;
   ///
   /// Array containing list of HTTP headers. On request, this array is populated by the
   /// caller. On response, this array is allocated and populated by the HTTP driver. It
   /// is the responsibility of the caller to free this memory on both request and
   /// response.
   ///
-  EFI_HTTP_HEADER               *Headers;
+  EFI_HTTP_HEADER    *Headers;
   ///
   /// Length in bytes of the HTTP body. This can be zero depending on the HttpMethod type.
   ///
-  UINTN                         BodyLength;
+  UINTN              BodyLength;
   ///
   /// Body associated with the HTTP request or response. This can be NULL depending on
   /// the HttpMethod type.
   ///
-  VOID                          *Body;
+  VOID               *Body;
 } EFI_HTTP_MESSAGE;
-
 
 ///
 /// EFI_HTTP_TOKEN
@@ -275,21 +271,23 @@ typedef struct {
   /// Protocol driver. The type of Event must be EFI_NOTIFY_SIGNAL. The Task Priority
   /// Level (TPL) of Event must be lower than or equal to TPL_CALLBACK.
   ///
-  EFI_EVENT                     Event;
+  EFI_EVENT    Event;
   ///
   /// Status will be set to one of the following value if the HTTP request is
   /// successfully sent or if an unexpected error occurs:
   ///   EFI_SUCCESS:      The HTTP request was successfully sent to the remote host.
+  ///   EFI_HTTP_ERROR:   The response message was successfully received but contains a
+  ///                     HTTP error. The response status code is returned in token.
   ///   EFI_ABORTED:      The HTTP request was cancelled by the caller and removed from
   ///                     the transmit queue.
   ///   EFI_TIMEOUT:      The HTTP request timed out before reaching the remote host.
   ///   EFI_DEVICE_ERROR: An unexpected system or network error occurred.
   ///
-  EFI_STATUS                    Status;
+  EFI_STATUS          Status;
   ///
   /// Pointer to storage containing HTTP message data.
   ///
-  EFI_HTTP_MESSAGE              *Message;
+  EFI_HTTP_MESSAGE    *Message;
 } EFI_HTTP_TOKEN;
 
 /**
@@ -300,14 +298,22 @@ typedef struct {
 
   @param[in]  This                Pointer to EFI_HTTP_PROTOCOL instance.
   @param[out] HttpConfigData      Point to buffer for operational parameters of this
-                                  HTTP instance.
+                                  HTTP instance. It is the responsibility of the caller
+                                  to allocate the memory for HttpConfigData and
+                                  HttpConfigData->AccessPoint.IPv6Node/IPv4Node. In fact,
+                                  it is recommended to allocate sufficient memory to record
+                                  IPv6Node since it is big enough for all possibilities.
 
   @retval EFI_SUCCESS             Operation succeeded.
   @retval EFI_INVALID_PARAMETER   This is NULL.
+                                  HttpConfigData is NULL.
+                                  HttpConfigData->AccessPoint.IPv4Node or
+                                  HttpConfigData->AccessPoint.IPv6Node is NULL.
+  @retval EFI_NOT_STARTED         This EFI HTTP Protocol instance has not been started.
 **/
 typedef
 EFI_STATUS
-(EFIAPI * EFI_HTTP_GET_MODE_DATA)(
+(EFIAPI *EFI_HTTP_GET_MODE_DATA)(
   IN  EFI_HTTP_PROTOCOL         *This,
   OUT EFI_HTTP_CONFIG_DATA      *HttpConfigData
   );
@@ -322,8 +328,8 @@ EFI_STATUS
   connections with remote hosts, canceling all asynchronous tokens, and flush request
   and response buffers without informing the appropriate hosts.
 
-  Except for GetModeData() and Configure(), No other EFI HTTP function can be executed
-  by this instance until the Configure() function is executed and returns successfully.
+  No other EFI HTTP function can be executed by this instance until the Configure()
+  function is executed and returns successfully.
 
   @param[in]  This                Pointer to EFI_HTTP_PROTOCOL instance.
   @param[in]  HttpConfigData      Pointer to the configure data to configure the instance.
@@ -332,9 +338,9 @@ EFI_STATUS
   @retval EFI_INVALID_PARAMETER   One or more of the following conditions is TRUE:
                                   This is NULL.
                                   HttpConfigData->LocalAddressIsIPv6 is FALSE and
-                                  HttpConfigData->IPv4Node is NULL.
+                                  HttpConfigData->AccessPoint.IPv4Node is NULL.
                                   HttpConfigData->LocalAddressIsIPv6 is TRUE and
-                                  HttpConfigData->IPv6Node is NULL.
+                                  HttpConfigData->AccessPoint.IPv6Node is NULL.
   @retval EFI_ALREADY_STARTED     Reinitialize this HTTP instance without calling
                                   Configure() with NULL to reset it.
   @retval EFI_DEVICE_ERROR        An unexpected system or network error occurred.
@@ -345,13 +351,13 @@ EFI_STATUS
 **/
 typedef
 EFI_STATUS
-(EFIAPI * EFI_HTTP_CONFIGURE)(
+(EFIAPI *EFI_HTTP_CONFIGURE)(
   IN  EFI_HTTP_PROTOCOL         *This,
-  IN  EFI_HTTP_CONFIG_DATA      *HttpConfigData
+  IN  EFI_HTTP_CONFIG_DATA      *HttpConfigData OPTIONAL
   );
 
 /**
-  The Request() function queues an HTTP request to this HTTP instance, 
+  The Request() function queues an HTTP request to this HTTP instance,
   similar to Transmit() function in the EFI TCP driver. When the HTTP request is sent
   successfully, or if there is an error, Status in token will be updated and Event will
   be signaled.
@@ -365,15 +371,18 @@ EFI_STATUS
   @retval EFI_TIMEOUT             Data was dropped out of the transmit or receive queue.
   @retval EFI_INVALID_PARAMETER   One or more of the following conditions is TRUE:
                                   This is NULL.
+                                  Token is NULL.
                                   Token->Message is NULL.
                                   Token->Message->Body is not NULL,
                                   Token->Message->BodyLength is non-zero, and
                                   Token->Message->Data is NULL, but a previous call to
                                   Request()has not been completed successfully.
+  @retval EFI_OUT_OF_RESOURCES    Could not allocate enough system resources.
+  @retval EFI_UNSUPPORTED         The HTTP method is not supported in current implementation.
 **/
 typedef
 EFI_STATUS
-(EFIAPI *EFI_HTTP_REQUEST) (
+(EFIAPI *EFI_HTTP_REQUEST)(
   IN  EFI_HTTP_PROTOCOL         *This,
   IN  EFI_HTTP_TOKEN            *Token
   );
@@ -395,8 +404,6 @@ EFI_STATUS
   @retval EFI_SUCCESS             Request and Response queues are successfully flushed.
   @retval EFI_INVALID_PARAMETER   This is NULL.
   @retval EFI_NOT_STARTED         This instance hasn't been configured.
-  @retval EFI_NO_MAPPING          When using the default address, configuration (DHCP,
-                                  BOOTP, RARP, etc.) hasn't finished yet.
   @retval EFI_NOT_FOUND           The asynchronous request or response token is not
                                   found.
   @retval EFI_UNSUPPORTED         The implementation does not support this function.
@@ -410,7 +417,7 @@ EFI_STATUS
 
 /**
   The Response() function queues an HTTP response to this HTTP instance, similar to
-  Receive() function in the EFI TCP driver. When the HTTP request is sent successfully,
+  Receive() function in the EFI TCP driver. When the HTTP Response is received successfully,
   or if there is an error, Status in token will be updated and Event will be signaled.
 
   The HTTP driver will queue a receive token to the underlying TCP instance. When data
@@ -444,18 +451,20 @@ EFI_STATUS
                                   initialized.
   @retval EFI_INVALID_PARAMETER   One or more of the following conditions is TRUE:
                                   This is NULL.
+                                  Token is NULL.
                                   Token->Message->Headers is NULL.
                                   Token->Message is NULL.
                                   Token->Message->Body is not NULL,
                                   Token->Message->BodyLength is non-zero, and
                                   Token->Message->Data is NULL, but a previous call to
                                   Response() has not been completed successfully.
+  @retval EFI_OUT_OF_RESOURCES    Could not allocate enough system resources.
   @retval EFI_ACCESS_DENIED       An open TCP connection is not present with the host
                                   specified by response URL.
 **/
 typedef
 EFI_STATUS
-(EFIAPI *EFI_HTTP_RESPONSE) (
+(EFIAPI *EFI_HTTP_RESPONSE)(
   IN  EFI_HTTP_PROTOCOL         *This,
   IN  EFI_HTTP_TOKEN            *Token
   );
@@ -477,10 +486,11 @@ EFI_STATUS
   @retval EFI_DEVICE_ERROR        An unexpected system or network error occurred
   @retval EFI_INVALID_PARAMETER   This is NULL.
   @retval EFI_NOT_READY           No incoming or outgoing data is processed.
+  @retval EFI_NOT_STARTED         This EFI HTTP Protocol instance has not been started.
 **/
 typedef
 EFI_STATUS
-(EFIAPI *EFI_HTTP_POLL) (
+(EFIAPI *EFI_HTTP_POLL)(
   IN  EFI_HTTP_PROTOCOL         *This
   );
 
@@ -491,15 +501,15 @@ EFI_STATUS
 /// TCP protocol.
 ///
 struct _EFI_HTTP_PROTOCOL {
-  EFI_HTTP_GET_MODE_DATA        GetModeData;
-  EFI_HTTP_CONFIGURE            Configure;
-  EFI_HTTP_REQUEST              Request;
-  EFI_HTTP_CANCEL               Cancel;
-  EFI_HTTP_RESPONSE             Response;
-  EFI_HTTP_POLL                 Poll;
+  EFI_HTTP_GET_MODE_DATA    GetModeData;
+  EFI_HTTP_CONFIGURE        Configure;
+  EFI_HTTP_REQUEST          Request;
+  EFI_HTTP_CANCEL           Cancel;
+  EFI_HTTP_RESPONSE         Response;
+  EFI_HTTP_POLL             Poll;
 };
 
-extern EFI_GUID gEfiHttpServiceBindingProtocolGuid;
-extern EFI_GUID gEfiHttpProtocolGuid;
+extern EFI_GUID  gEfiHttpServiceBindingProtocolGuid;
+extern EFI_GUID  gEfiHttpProtocolGuid;
 
 #endif

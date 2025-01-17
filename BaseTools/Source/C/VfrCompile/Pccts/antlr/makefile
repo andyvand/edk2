@@ -164,13 +164,13 @@ PCCTS_H=../h
 #
 #   UNIX  (default)
 #
-CC=gcc
 COPT=-O
 ANTLR=${BIN_DIR}/antlr
 DLG=${BIN_DIR}/dlg
 OBJ_EXT=o
 OUT_OBJ = -o
 CFLAGS= $(COPT) -I. -I$(SET) -I$(PCCTS_H) -DUSER_ZZSYN $(COTHER) -DZZLEXBUFSIZE=65536
+CPPFLAGS=
 #
 # SGI Users, use this CFLAGS
 #
@@ -204,6 +204,8 @@ scan.o : scan.c mode.h tokens.h
 set.o : $(SET)/set.c
 	$(CC) $(CFLAGS) -c -o set.o $(SET)/set.c
 
+%.o : %.c 
+	$(CC) -c $(CFLAGS) $(CPPFLAGS) $< -o $@
 
 #
 # ****** These next targets are common to UNIX and PC world ********

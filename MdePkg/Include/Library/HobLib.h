@@ -6,16 +6,10 @@
   defined in the PI Specification.
   A HOB is a Hand-Off Block, defined in the Framework architecture, that
   allows the PEI phase to pass information to the DXE phase. HOBs are position
-  independent and can be relocated easily to different memory memory locations.
+  independent and can be relocated easily to different memory locations.
 
-Copyright (c) 2006 - 2014, Intel Corporation. All rights reserved.<BR>
-This program and the accompanying materials
-are licensed and made available under the terms and conditions of the BSD License
-which accompanies this distribution.  The full text of the license may be found at
-http://opensource.org/licenses/bsd-license.php
-
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -64,8 +58,8 @@ GetHobList (
 VOID *
 EFIAPI
 GetNextHob (
-  IN UINT16                 Type,
-  IN CONST VOID             *HobStart
+  IN UINT16      Type,
+  IN CONST VOID  *HobStart
   );
 
 /**
@@ -84,7 +78,7 @@ GetNextHob (
 VOID *
 EFIAPI
 GetFirstHob (
-  IN UINT16                 Type
+  IN UINT16  Type
   );
 
 /**
@@ -112,8 +106,8 @@ GetFirstHob (
 VOID *
 EFIAPI
 GetNextGuidHob (
-  IN CONST EFI_GUID         *Guid,
-  IN CONST VOID             *HobStart
+  IN CONST EFI_GUID  *Guid,
+  IN CONST VOID      *HobStart
   );
 
 /**
@@ -137,7 +131,7 @@ GetNextGuidHob (
 VOID *
 EFIAPI
 GetFirstGuidHob (
-  IN CONST EFI_GUID         *Guid
+  IN CONST EFI_GUID  *Guid
   );
 
 /**
@@ -178,10 +172,10 @@ GetBootModeHob (
 VOID
 EFIAPI
 BuildModuleHob (
-  IN CONST EFI_GUID         *ModuleName,
-  IN EFI_PHYSICAL_ADDRESS   MemoryAllocationModule,
-  IN UINT64                 ModuleLength,
-  IN EFI_PHYSICAL_ADDRESS   EntryPoint
+  IN CONST EFI_GUID        *ModuleName,
+  IN EFI_PHYSICAL_ADDRESS  MemoryAllocationModule,
+  IN UINT64                ModuleLength,
+  IN EFI_PHYSICAL_ADDRESS  EntryPoint
   );
 
 /**
@@ -190,7 +184,7 @@ BuildModuleHob (
   This function builds a HOB that describes a chunk of system memory.
   It can only be invoked during PEI phase;
   for DXE phase, it will ASSERT() since PEI HOB is read-only for DXE phase.
-  
+
   If there is no additional space for HOB creation, then ASSERT().
 
   @param  ResourceType        The type of resource described by this HOB.
@@ -259,8 +253,8 @@ BuildResourceDescriptorHob (
 VOID *
 EFIAPI
 BuildGuidHob (
-  IN CONST EFI_GUID              *Guid,
-  IN UINTN                       DataLength
+  IN CONST EFI_GUID  *Guid,
+  IN UINTN           DataLength
   );
 
 /**
@@ -291,9 +285,9 @@ BuildGuidHob (
 VOID *
 EFIAPI
 BuildGuidDataHob (
-  IN CONST EFI_GUID              *Guid,
-  IN VOID                        *Data,
-  IN UINTN                       DataLength
+  IN CONST EFI_GUID  *Guid,
+  IN VOID            *Data,
+  IN UINTN           DataLength
   );
 
 /**
@@ -304,6 +298,7 @@ BuildGuidDataHob (
   for DXE phase, it will ASSERT() since PEI HOB is read-only for DXE phase.
 
   If there is no additional space for HOB creation, then ASSERT().
+  If the FvImage buffer is not at its required alignment, then ASSERT().
 
   @param  BaseAddress   The base address of the Firmware Volume.
   @param  Length        The size of the Firmware Volume in bytes.
@@ -312,8 +307,8 @@ BuildGuidDataHob (
 VOID
 EFIAPI
 BuildFvHob (
-  IN EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN UINT64                      Length
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINT64                Length
   );
 
 /**
@@ -324,6 +319,7 @@ BuildFvHob (
   for DXE phase, it will ASSERT() since PEI HOB is read-only for DXE phase.
 
   If there is no additional space for HOB creation, then ASSERT().
+  If the FvImage buffer is not at its required alignment, then ASSERT().
 
   @param  BaseAddress   The base address of the Firmware Volume.
   @param  Length        The size of the Firmware Volume in bytes.
@@ -334,10 +330,42 @@ BuildFvHob (
 VOID
 EFIAPI
 BuildFv2Hob (
-  IN          EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN          UINT64                      Length,
-  IN CONST    EFI_GUID                    *FvName,
-  IN CONST    EFI_GUID                    *FileName
+  IN          EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN          UINT64                Length,
+  IN CONST    EFI_GUID              *FvName,
+  IN CONST    EFI_GUID              *FileName
+  );
+
+/**
+  Builds a EFI_HOB_TYPE_FV3 HOB.
+
+  This function builds a EFI_HOB_TYPE_FV3 HOB.
+  It can only be invoked during PEI phase;
+  for DXE phase, it will ASSERT() since PEI HOB is read-only for DXE phase.
+
+  If there is no additional space for HOB creation, then ASSERT().
+  If the FvImage buffer is not at its required alignment, then ASSERT().
+
+  @param BaseAddress            The base address of the Firmware Volume.
+  @param Length                 The size of the Firmware Volume in bytes.
+  @param AuthenticationStatus   The authentication status.
+  @param ExtractedFv            TRUE if the FV was extracted as a file within
+                                another firmware volume. FALSE otherwise.
+  @param FvName                 The name of the Firmware Volume.
+                                Valid only if IsExtractedFv is TRUE.
+  @param FileName               The name of the file.
+                                Valid only if IsExtractedFv is TRUE.
+
+**/
+VOID
+EFIAPI
+BuildFv3Hob (
+  IN          EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN          UINT64                Length,
+  IN          UINT32                AuthenticationStatus,
+  IN          BOOLEAN               ExtractedFv,
+  IN CONST    EFI_GUID              *FvName  OPTIONAL,
+  IN CONST    EFI_GUID              *FileName OPTIONAL
   );
 
 /**
@@ -357,8 +385,8 @@ BuildFv2Hob (
 VOID
 EFIAPI
 BuildCvHob (
-  IN EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN UINT64                      Length
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINT64                Length
   );
 
 /**
@@ -377,8 +405,8 @@ BuildCvHob (
 VOID
 EFIAPI
 BuildCpuHob (
-  IN UINT8                       SizeOfMemorySpace,
-  IN UINT8                       SizeOfIoSpace
+  IN UINT8  SizeOfMemorySpace,
+  IN UINT8  SizeOfIoSpace
   );
 
 /**
@@ -397,8 +425,8 @@ BuildCpuHob (
 VOID
 EFIAPI
 BuildStackHob (
-  IN EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN UINT64                      Length
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINT64                Length
   );
 
 /**
@@ -418,9 +446,9 @@ BuildStackHob (
 VOID
 EFIAPI
 BuildBspStoreHob (
-  IN EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN UINT64                      Length,
-  IN EFI_MEMORY_TYPE             MemoryType
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINT64                Length,
+  IN EFI_MEMORY_TYPE       MemoryType
   );
 
 /**
@@ -440,9 +468,9 @@ BuildBspStoreHob (
 VOID
 EFIAPI
 BuildMemoryAllocationHob (
-  IN EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN UINT64                      Length,
-  IN EFI_MEMORY_TYPE             MemoryType
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINT64                Length,
+  IN EFI_MEMORY_TYPE       MemoryType
   );
 
 /**

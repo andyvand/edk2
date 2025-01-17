@@ -1,23 +1,29 @@
 /** @file
 This file contains the internal functions required to generate a Firmware Volume.
 
-Copyright (c) 2004 - 2014, Intel Corporation. All rights reserved.<BR>
+Copyright (c) 2004 - 2018, Intel Corporation. All rights reserved.<BR>
 Portions Copyright (c) 2011 - 2013, ARM Ltd. All rights reserved.<BR>
-This program and the accompanying materials                          
-are licensed and made available under the terms and conditions of the BSD License         
-which accompanies this distribution.  The full text of the license may be found at        
-http://opensource.org/licenses/bsd-license.php                                            
-                                                                                          
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,                     
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.             
+Portions Copyright (c) 2016 HP Development Company, L.P.<BR>
+Portions Copyright (c) 2020, Hewlett Packard Enterprise Development LP. All rights reserved.<BR>
+Portions Copyright (c) 2022, Loongson Technology Corporation Limited. All rights reserved.<BR>
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 //
 // Include files
 //
-#ifdef __GNUC__
+
+#if defined(__FreeBSD__)
+#include <uuid.h>
+#elif defined(__GNUC__)
+#if !defined(__CROSS_LIB_UUID__)
 #include <uuid/uuid.h>
+#else
+#include <uuid.h>
+#endif
+#endif
+#ifdef __GNUC__
 #include <sys/stat.h>
 #endif
 #include <string.h>
@@ -26,128 +32,97 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 #endif
 #include <assert.h>
 
+#include <Guid/FfsSectionAlignmentPadding.h>
+
 #include "GenFvInternalLib.h"
 #include "FvLib.h"
 #include "PeCoffLib.h"
-#include "WinNtInclude.h"
+
+#define ARM64_UNCONDITIONAL_JUMP_INSTRUCTION      0x14000000
+
+/*
+ * Arm instruction to jump to Fv entry instruction in Arm or Thumb mode.
+ * From ARM Arch Ref Manual versions b/c/d, section A8.8.25 BL, BLX (immediate)
+ * BLX (encoding A2) branches to offset in Thumb instruction set mode.
+ * BL (encoding A1) branches to offset in Arm instruction set mode.
+ */
+#define ARM_JUMP_OFFSET_MAX        0xffffff
+#define ARM_JUMP_TO_ARM(Offset)    (0xeb000000 | ((Offset - 8) >> 2))
+
+#define _ARM_JUMP_TO_THUMB(Imm32)  (0xfa000000 | \
+                                    (((Imm32) & (1 << 1)) << (24 - 1)) | \
+                                    (((Imm32) >> 2) & 0x7fffff))
+#define ARM_JUMP_TO_THUMB(Offset)  _ARM_JUMP_TO_THUMB((Offset) - 8)
+
+/*
+ * Arm instruction to return from exception (MOVS PC, LR)
+ */
+#define ARM_RETURN_FROM_EXCEPTION  0xE1B0F07E
 
 BOOLEAN mArm = FALSE;
+BOOLEAN mRiscV = FALSE;
+BOOLEAN mLoongArch = FALSE;
 STATIC UINT32   MaxFfsAlignment = 0;
+BOOLEAN VtfFileFlag = FALSE;
 
-EFI_GUID  mEfiFirmwareVolumeTopFileGuid = EFI_FFS_VOLUME_TOP_FILE_GUID;
+EFI_GUID  mEfiFirmwareVolumeTopFileGuid       = EFI_FFS_VOLUME_TOP_FILE_GUID;
 EFI_GUID  mFileGuidArray [MAX_NUMBER_OF_FILES_IN_FV];
-EFI_GUID  mZeroGuid                 = {0x0, 0x0, 0x0, {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0}};
-EFI_GUID  mDefaultCapsuleGuid       = {0x3B6686BD, 0x0D76, 0x4030, { 0xB7, 0x0E, 0xB5, 0x51, 0x9E, 0x2F, 0xC5, 0xA0 }};
+EFI_GUID  mZeroGuid                           = {0x0, 0x0, 0x0, {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0}};
+EFI_GUID  mDefaultCapsuleGuid                 = {0x3B6686BD, 0x0D76, 0x4030, { 0xB7, 0x0E, 0xB5, 0x51, 0x9E, 0x2F, 0xC5, 0xA0 }};
+EFI_GUID  mEfiFfsSectionAlignmentPaddingGuid  = EFI_FFS_SECTION_ALIGNMENT_PADDING_GUID;
 
 CHAR8      *mFvbAttributeName[] = {
-  EFI_FVB2_READ_DISABLED_CAP_STRING, 
-  EFI_FVB2_READ_ENABLED_CAP_STRING,  
-  EFI_FVB2_READ_STATUS_STRING,       
+  EFI_FVB2_READ_DISABLED_CAP_STRING,
+  EFI_FVB2_READ_ENABLED_CAP_STRING,
+  EFI_FVB2_READ_STATUS_STRING,
   EFI_FVB2_WRITE_DISABLED_CAP_STRING,
-  EFI_FVB2_WRITE_ENABLED_CAP_STRING, 
-  EFI_FVB2_WRITE_STATUS_STRING,      
-  EFI_FVB2_LOCK_CAP_STRING,          
-  EFI_FVB2_LOCK_STATUS_STRING,       
+  EFI_FVB2_WRITE_ENABLED_CAP_STRING,
+  EFI_FVB2_WRITE_STATUS_STRING,
+  EFI_FVB2_LOCK_CAP_STRING,
+  EFI_FVB2_LOCK_STATUS_STRING,
   NULL,
-  EFI_FVB2_STICKY_WRITE_STRING,      
-  EFI_FVB2_MEMORY_MAPPED_STRING,     
-  EFI_FVB2_ERASE_POLARITY_STRING,    
-  EFI_FVB2_READ_LOCK_CAP_STRING,     
-  EFI_FVB2_READ_LOCK_STATUS_STRING,  
-  EFI_FVB2_WRITE_LOCK_CAP_STRING,    
-  EFI_FVB2_WRITE_LOCK_STATUS_STRING 
+  EFI_FVB2_STICKY_WRITE_STRING,
+  EFI_FVB2_MEMORY_MAPPED_STRING,
+  EFI_FVB2_ERASE_POLARITY_STRING,
+  EFI_FVB2_READ_LOCK_CAP_STRING,
+  EFI_FVB2_READ_LOCK_STATUS_STRING,
+  EFI_FVB2_WRITE_LOCK_CAP_STRING,
+  EFI_FVB2_WRITE_LOCK_STATUS_STRING
 };
 
 CHAR8      *mFvbAlignmentName[] = {
-  EFI_FVB2_ALIGNMENT_1_STRING,   
-  EFI_FVB2_ALIGNMENT_2_STRING,   
-  EFI_FVB2_ALIGNMENT_4_STRING,   
-  EFI_FVB2_ALIGNMENT_8_STRING,   
-  EFI_FVB2_ALIGNMENT_16_STRING,  
-  EFI_FVB2_ALIGNMENT_32_STRING,  
-  EFI_FVB2_ALIGNMENT_64_STRING,  
-  EFI_FVB2_ALIGNMENT_128_STRING, 
-  EFI_FVB2_ALIGNMENT_256_STRING, 
-  EFI_FVB2_ALIGNMENT_512_STRING, 
-  EFI_FVB2_ALIGNMENT_1K_STRING,  
-  EFI_FVB2_ALIGNMENT_2K_STRING,  
-  EFI_FVB2_ALIGNMENT_4K_STRING,  
-  EFI_FVB2_ALIGNMENT_8K_STRING,  
-  EFI_FVB2_ALIGNMENT_16K_STRING, 
-  EFI_FVB2_ALIGNMENT_32K_STRING, 
-  EFI_FVB2_ALIGNMENT_64K_STRING, 
+  EFI_FVB2_ALIGNMENT_1_STRING,
+  EFI_FVB2_ALIGNMENT_2_STRING,
+  EFI_FVB2_ALIGNMENT_4_STRING,
+  EFI_FVB2_ALIGNMENT_8_STRING,
+  EFI_FVB2_ALIGNMENT_16_STRING,
+  EFI_FVB2_ALIGNMENT_32_STRING,
+  EFI_FVB2_ALIGNMENT_64_STRING,
+  EFI_FVB2_ALIGNMENT_128_STRING,
+  EFI_FVB2_ALIGNMENT_256_STRING,
+  EFI_FVB2_ALIGNMENT_512_STRING,
+  EFI_FVB2_ALIGNMENT_1K_STRING,
+  EFI_FVB2_ALIGNMENT_2K_STRING,
+  EFI_FVB2_ALIGNMENT_4K_STRING,
+  EFI_FVB2_ALIGNMENT_8K_STRING,
+  EFI_FVB2_ALIGNMENT_16K_STRING,
+  EFI_FVB2_ALIGNMENT_32K_STRING,
+  EFI_FVB2_ALIGNMENT_64K_STRING,
   EFI_FVB2_ALIGNMENT_128K_STRING,
   EFI_FVB2_ALIGNMENT_256K_STRING,
   EFI_FVB2_ALIGNMENT_512K_STRING,
-  EFI_FVB2_ALIGNMENT_1M_STRING,  
-  EFI_FVB2_ALIGNMENT_2M_STRING,  
-  EFI_FVB2_ALIGNMENT_4M_STRING,  
-  EFI_FVB2_ALIGNMENT_8M_STRING,  
-  EFI_FVB2_ALIGNMENT_16M_STRING, 
-  EFI_FVB2_ALIGNMENT_32M_STRING, 
-  EFI_FVB2_ALIGNMENT_64M_STRING, 
+  EFI_FVB2_ALIGNMENT_1M_STRING,
+  EFI_FVB2_ALIGNMENT_2M_STRING,
+  EFI_FVB2_ALIGNMENT_4M_STRING,
+  EFI_FVB2_ALIGNMENT_8M_STRING,
+  EFI_FVB2_ALIGNMENT_16M_STRING,
+  EFI_FVB2_ALIGNMENT_32M_STRING,
+  EFI_FVB2_ALIGNMENT_64M_STRING,
   EFI_FVB2_ALIGNMENT_128M_STRING,
   EFI_FVB2_ALIGNMENT_256M_STRING,
   EFI_FVB2_ALIGNMENT_512M_STRING,
-  EFI_FVB2_ALIGNMENT_1G_STRING,  
+  EFI_FVB2_ALIGNMENT_1G_STRING,
   EFI_FVB2_ALIGNMENT_2G_STRING
-};
-
-//
-// This data array will be located at the base of the Firmware Volume Header (FVH)
-// in the boot block.  It must not exceed 14 bytes of code.  The last 2 bytes
-// will be used to keep the FVH checksum consistent.
-// This code will be run in response to a starutp IPI for HT-enabled systems.
-//
-#define SIZEOF_STARTUP_DATA_ARRAY 0x10
-
-UINT8                                   m128kRecoveryStartupApDataArray[SIZEOF_STARTUP_DATA_ARRAY] = {
-  //
-  // EA D0 FF 00 F0               ; far jmp F000:FFD0
-  // 0, 0, 0, 0, 0, 0, 0, 0, 0,   ; Reserved bytes
-  // 0, 0                         ; Checksum Padding
-  //
-  0xEA,
-  0xD0,
-  0xFF,
-  0x0,
-  0xF0,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00
-};
-
-UINT8                                   m64kRecoveryStartupApDataArray[SIZEOF_STARTUP_DATA_ARRAY] = {
-  //
-  // EB CE                               ; jmp short ($-0x30)
-  // ; (from offset 0x0 to offset 0xFFD0)
-  // 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ; Reserved bytes
-  // 0, 0                                ; Checksum Padding
-  //
-  0xEB,
-  0xCE,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x00
 };
 
 FV_INFO                     mFvDataInfo;
@@ -245,7 +220,7 @@ Returns:
     //
     strcpy (FvInfo->FvName, Value);
   }
-  
+
   //
   // Read Fv Attribute
   //
@@ -362,7 +337,7 @@ Returns:
     }
   }
 
-  for (Index = 0; Index < MAX_NUMBER_OF_FILES_IN_FV; Index++) {
+  for (Index = 0; Number + Index < MAX_NUMBER_OF_FILES_IN_FV; Index++) {
     //
     // Read the FFS file list
     //
@@ -396,7 +371,7 @@ UpdateFfsFileState (
 Routine Description:
 
   This function changes the FFS file attributes based on the erase polarity
-  of the FV. Update the reserved bits of State to EFI_FVB2_ERASE_POLARITY. 
+  of the FV. Update the reserved bits of State to EFI_FVB2_ERASE_POLARITY.
 
 Arguments:
 
@@ -452,57 +427,97 @@ Returns:
   case 0:
     //
     // 1 byte alignment
+    //if bit 1 have set, 128K byte alignment
     //
-    *Alignment = 0;
+    if (FfsFile->Attributes & FFS_ATTRIB_DATA_ALIGNMENT2) {
+      *Alignment = 17;
+    } else {
+      *Alignment = 0;
+    }
     break;
 
   case 1:
     //
     // 16 byte alignment
+    //if bit 1 have set, 256K byte alignment
     //
-    *Alignment = 4;
+    if (FfsFile->Attributes & FFS_ATTRIB_DATA_ALIGNMENT2) {
+      *Alignment = 18;
+    } else {
+      *Alignment = 4;
+    }
     break;
 
   case 2:
     //
     // 128 byte alignment
+    //if bit 1 have set, 512K byte alignment
     //
-    *Alignment = 7;
+    if (FfsFile->Attributes & FFS_ATTRIB_DATA_ALIGNMENT2) {
+      *Alignment = 19;
+    } else {
+      *Alignment = 7;
+    }
     break;
 
   case 3:
     //
     // 512 byte alignment
+    //if bit 1 have set, 1M byte alignment
     //
-    *Alignment = 9;
+    if (FfsFile->Attributes & FFS_ATTRIB_DATA_ALIGNMENT2) {
+      *Alignment = 20;
+    } else {
+      *Alignment = 9;
+    }
     break;
 
   case 4:
     //
     // 1K byte alignment
+    //if bit 1 have set, 2M byte alignment
     //
-    *Alignment = 10;
+    if (FfsFile->Attributes & FFS_ATTRIB_DATA_ALIGNMENT2) {
+      *Alignment = 21;
+    } else {
+      *Alignment = 10;
+    }
     break;
 
   case 5:
     //
     // 4K byte alignment
+    //if bit 1 have set, 4M byte alignment
     //
-    *Alignment = 12;
+    if (FfsFile->Attributes & FFS_ATTRIB_DATA_ALIGNMENT2) {
+      *Alignment = 22;
+    } else {
+      *Alignment = 12;
+    }
     break;
 
   case 6:
     //
     // 32K byte alignment
+    //if bit 1 have set , 8M byte alignment
     //
-    *Alignment = 15;
+    if (FfsFile->Attributes & FFS_ATTRIB_DATA_ALIGNMENT2) {
+      *Alignment = 23;
+    } else {
+      *Alignment = 15;
+    }
     break;
 
   case 7:
     //
     // 64K byte alignment
+    //if bit 1 have set, 16M alignment
     //
-    *Alignment = 16;
+    if (FfsFile->Attributes & FFS_ATTRIB_DATA_ALIGNMENT2) {
+      *Alignment = 24;
+    } else {
+      *Alignment = 16;
+    }
     break;
 
   default:
@@ -533,7 +548,7 @@ Arguments:
                   The current offset must be valid.
   DataAlignment   The data alignment of the next FFS file.
   FvEnd           End of the empty data in FvImage.
-  ExtHeader       PI FvExtHeader Optional 
+  ExtHeader       PI FvExtHeader Optional
 
 Returns:
 
@@ -548,7 +563,9 @@ Returns:
   UINTN               PadFileSize;
   UINT32              NextFfsHeaderSize;
   UINT32              CurFfsHeaderSize;
+  UINT32              Index;
 
+  Index = 0;
   CurFfsHeaderSize = sizeof (EFI_FFS_FILE_HEADER);
   //
   // Verify input parameters.
@@ -653,14 +670,27 @@ Returns:
     //
     // Copy Fv Extension Header and Set Fv Extension header offset
     //
+    if (ExtHeader->ExtHeaderSize > sizeof (EFI_FIRMWARE_VOLUME_EXT_HEADER)) {
+      for (Index = sizeof (EFI_FIRMWARE_VOLUME_EXT_HEADER); Index < ExtHeader->ExtHeaderSize;) {
+        if (((EFI_FIRMWARE_VOLUME_EXT_ENTRY *)((UINT8 *)ExtHeader + Index))-> ExtEntryType == EFI_FV_EXT_TYPE_USED_SIZE_TYPE) {
+          if (VtfFileFlag) {
+            ((EFI_FIRMWARE_VOLUME_EXT_ENTRY_USED_SIZE_TYPE *)((UINT8 *)ExtHeader + Index))->UsedSize = mFvTotalSize;
+          } else {
+            ((EFI_FIRMWARE_VOLUME_EXT_ENTRY_USED_SIZE_TYPE *)((UINT8 *)ExtHeader + Index))->UsedSize = mFvTakenSize;
+          }
+          break;
+        }
+        Index += ((EFI_FIRMWARE_VOLUME_EXT_ENTRY *)((UINT8 *)ExtHeader + Index))-> ExtEntrySize;
+      }
+    }
     memcpy ((UINT8 *)PadFile + CurFfsHeaderSize, ExtHeader, ExtHeader->ExtHeaderSize);
     ((EFI_FIRMWARE_VOLUME_HEADER *) FvImage->FileImage)->ExtHeaderOffset = (UINT16) ((UINTN) ((UINT8 *)PadFile + CurFfsHeaderSize) - (UINTN) FvImage->FileImage);
-	  //
-	  // Make next file start at QWord Boundry
-	  //
-	  while (((UINTN) FvImage->CurrentFilePointer & (EFI_FFS_FILE_HEADER_ALIGNMENT - 1)) != 0) {
-	    FvImage->CurrentFilePointer++;
-	  }
+    //
+    // Make next file start at QWord Boundary
+    //
+    while (((UINTN) FvImage->CurrentFilePointer & (EFI_FFS_FILE_HEADER_ALIGNMENT - 1)) != 0) {
+      FvImage->CurrentFilePointer++;
+    }
   }
 
   return EFI_SUCCESS;
@@ -698,7 +728,7 @@ EFI_STATUS
 WriteMapFile (
   IN OUT FILE                  *FvMapFile,
   IN     CHAR8                 *FileName,
-  IN     EFI_FFS_FILE_HEADER   *FfsFile, 
+  IN     EFI_FFS_FILE_HEADER   *FfsFile,
   IN     EFI_PHYSICAL_ADDRESS  ImageBaseAddress,
   IN     PE_COFF_LOADER_IMAGE_CONTEXT *pImageContext
   )
@@ -729,6 +759,7 @@ Returns:
   FILE                                *PeMapFile;
   CHAR8                               Line [MAX_LINE_LEN];
   CHAR8                               KeyWord [MAX_LINE_LEN];
+  CHAR8                               KeyWord2 [MAX_LINE_LEN];
   CHAR8                               FunctionName [MAX_LINE_LEN];
   EFI_PHYSICAL_ADDRESS                FunctionAddress;
   UINT32                              FunctionType;
@@ -739,25 +770,30 @@ Returns:
   EFI_IMAGE_OPTIONAL_HEADER_UNION     *ImgHdr;
   EFI_TE_IMAGE_HEADER                 *TEImageHeader;
   EFI_IMAGE_SECTION_HEADER            *SectionHeader;
-  unsigned long long                  TempLongAddress;
+  long long                           TempLongAddress;
   UINT32                              TextVirtualAddress;
   UINT32                              DataVirtualAddress;
   EFI_PHYSICAL_ADDRESS                LinkTimeBaseAddress;
+  BOOLEAN                             IsUseClang;
 
   //
   // Init local variable
   //
   FunctionType = 0;
   //
-  // Print FileGuid to string buffer. 
+  // Print FileGuid to string buffer.
   //
   PrintGuidToBuffer (&FfsFile->Name, (UINT8 *)FileGuidName, MAX_LINE_LEN, TRUE);
-  
+
   //
-  // Construct Map file Name 
+  // Construct Map file Name
   //
-  strcpy (PeMapFileName, FileName);
-  
+  if (strlen (FileName) >= MAX_LONG_FILE_PATH) {
+    return EFI_ABORTED;
+  }
+  strncpy (PeMapFileName, FileName, MAX_LONG_FILE_PATH - 1);
+  PeMapFileName[MAX_LONG_FILE_PATH - 1] = 0;
+
   //
   // Change '\\' to '/', unified path format.
   //
@@ -768,10 +804,10 @@ Returns:
     }
     Cptr ++;
   }
-  
+
   //
   // Get Map file
-  // 
+  //
   Cptr = PeMapFileName + strlen (PeMapFileName);
   while ((*Cptr != '.') && (Cptr >= PeMapFileName)) {
     Cptr --;
@@ -792,26 +828,30 @@ Returns:
   while ((*Cptr != FILE_SEP_CHAR) && (Cptr >= PeMapFileName)) {
     Cptr --;
   }
-	*Cptr2 = '\0';
-	strcpy (KeyWord, Cptr + 1);
-	*Cptr2 = '.';
+  *Cptr2 = '\0';
+  if (strlen (Cptr + 1) >= MAX_LINE_LEN) {
+    return EFI_ABORTED;
+  }
+  strncpy (KeyWord, Cptr + 1, MAX_LINE_LEN - 1);
+  KeyWord[MAX_LINE_LEN - 1] = 0;
+  *Cptr2 = '.';
 
   //
   // AddressOfEntryPoint and Offset in Image
   //
   if (!pImageContext->IsTeImage) {
-  	ImgHdr = (EFI_IMAGE_OPTIONAL_HEADER_UNION *) ((UINT8 *) pImageContext->Handle + pImageContext->PeCoffHeaderOffset);
-  	AddressOfEntryPoint = ImgHdr->Pe32.OptionalHeader.AddressOfEntryPoint;
-  	Offset = 0;
+    ImgHdr = (EFI_IMAGE_OPTIONAL_HEADER_UNION *) ((UINT8 *) pImageContext->Handle + pImageContext->PeCoffHeaderOffset);
+    AddressOfEntryPoint = ImgHdr->Pe32.OptionalHeader.AddressOfEntryPoint;
+    Offset = 0;
     SectionHeader = (EFI_IMAGE_SECTION_HEADER *) (
                        (UINT8 *) ImgHdr +
-                       sizeof (UINT32) + 
-                       sizeof (EFI_IMAGE_FILE_HEADER) +  
+                       sizeof (UINT32) +
+                       sizeof (EFI_IMAGE_FILE_HEADER) +
                        ImgHdr->Pe32.FileHeader.SizeOfOptionalHeader
                        );
     Index = ImgHdr->Pe32.FileHeader.NumberOfSections;
   } else {
-  	TEImageHeader = (EFI_TE_IMAGE_HEADER *) pImageContext->Handle;
+    TEImageHeader = (EFI_TE_IMAGE_HEADER *) pImageContext->Handle;
     AddressOfEntryPoint = TEImageHeader->AddressOfEntryPoint;
     Offset = TEImageHeader->StrippedSize - sizeof (EFI_TE_IMAGE_HEADER);
     SectionHeader = (EFI_IMAGE_SECTION_HEADER *) (TEImageHeader + 1);
@@ -829,33 +869,30 @@ Returns:
     fprintf (FvMapFile, "BaseAddress=0x%010llx, ", (unsigned long long) (ImageBaseAddress + Offset));
   }
 
-  if (FfsFile->Type != EFI_FV_FILETYPE_SECURITY_CORE && pImageContext->Machine == EFI_IMAGE_MACHINE_IA64) {
-    //
-    // Process IPF PLABEL to get the real address after the image has been rebased. 
-    // PLABEL structure is got by AddressOfEntryPoint offset to ImageBuffer stored in pImageContext->Handle.
-    //
-    fprintf (FvMapFile, "EntryPoint=0x%010llx", (unsigned long long) (*(UINT64 *)((UINTN) pImageContext->Handle + (UINTN) AddressOfEntryPoint)));
+  fprintf (FvMapFile, "EntryPoint=0x%010llx, ", (unsigned long long) (ImageBaseAddress + AddressOfEntryPoint));
+  if (!pImageContext->IsTeImage) {
+    fprintf (FvMapFile, "Type=PE");
   } else {
-    fprintf (FvMapFile, "EntryPoint=0x%010llx", (unsigned long long) (ImageBaseAddress + AddressOfEntryPoint));
+    fprintf (FvMapFile, "Type=TE");
   }
-  fprintf (FvMapFile, ")\n"); 
-  
+  fprintf (FvMapFile, ")\n");
+
   fprintf (FvMapFile, "(GUID=%s", FileGuidName);
   TextVirtualAddress = 0;
   DataVirtualAddress = 0;
   for (; Index > 0; Index --, SectionHeader ++) {
     if (stricmp ((CHAR8 *)SectionHeader->Name, ".text") == 0) {
-  		TextVirtualAddress = SectionHeader->VirtualAddress;
-  	} else if (stricmp ((CHAR8 *)SectionHeader->Name, ".data") == 0) {
-  	  DataVirtualAddress = SectionHeader->VirtualAddress;
-  	} else if (stricmp ((CHAR8 *)SectionHeader->Name, ".sdata") == 0) {
-  	  DataVirtualAddress = SectionHeader->VirtualAddress;
-  	}
+      TextVirtualAddress = SectionHeader->VirtualAddress;
+    } else if (stricmp ((CHAR8 *)SectionHeader->Name, ".data") == 0) {
+      DataVirtualAddress = SectionHeader->VirtualAddress;
+    } else if (stricmp ((CHAR8 *)SectionHeader->Name, ".sdata") == 0) {
+      DataVirtualAddress = SectionHeader->VirtualAddress;
+    }
   }
   fprintf (FvMapFile, " .textbaseaddress=0x%010llx", (unsigned long long) (ImageBaseAddress + TextVirtualAddress));
   fprintf (FvMapFile, " .databaseaddress=0x%010llx", (unsigned long long) (ImageBaseAddress + DataVirtualAddress));
   fprintf (FvMapFile, ")\n\n");
-   
+
   //
   // Open PeMapFile
   //
@@ -865,11 +902,12 @@ Returns:
     return EFI_ABORTED;
   }
   VerboseMsg ("The map file is %s", PeMapFileName);
-  
+
   //
   // Output Functions information into Fv Map file
   //
   LinkTimeBaseAddress = 0;
+  IsUseClang = FALSE;
   while (fgets (Line, MAX_LINE_LEN, PeMapFile) != NULL) {
     //
     // Skip blank line
@@ -880,10 +918,16 @@ Returns:
     }
     //
     // By Address and Static keyword
-    //  
+    //
     if (FunctionType == 0) {
       sscanf (Line, "%s", KeyWord);
       if (stricmp (KeyWord, "Address") == 0) {
+        sscanf (Line, "%s %s", KeyWord, KeyWord2);
+        if (stricmp (KeyWord2, "Size") == 0) {
+          IsUseClang = TRUE;
+          FunctionType = 1;
+          continue;
+        }
         //
         // function list
         //
@@ -905,11 +949,20 @@ Returns:
     // Printf Function Information
     //
     if (FunctionType == 1) {
-      sscanf (Line, "%s %s %llx %s", KeyWord, FunctionName, &TempLongAddress, FunctionTypeName);
-      FunctionAddress = (UINT64) TempLongAddress;
-      if (FunctionTypeName [1] == '\0' && (FunctionTypeName [0] == 'f' || FunctionTypeName [0] == 'F')) {
-        fprintf (FvMapFile, "  0x%010llx    ", (unsigned long long) (ImageBaseAddress + FunctionAddress - LinkTimeBaseAddress));
-        fprintf (FvMapFile, "%s\n", FunctionName);
+      if (IsUseClang) {
+        sscanf (Line, "%llx %s %s %s", &TempLongAddress, KeyWord, KeyWord2, FunctionTypeName);
+        FunctionAddress = (UINT64) TempLongAddress;
+        if (FunctionTypeName [0] != '/' && FunctionTypeName [0] != '.' && FunctionTypeName [1] != ':') {
+          fprintf (FvMapFile, "  0x%010llx    ", (unsigned long long) (ImageBaseAddress + FunctionAddress - LinkTimeBaseAddress));
+          fprintf (FvMapFile, "%s\n", FunctionTypeName);
+        }
+      } else {
+        sscanf (Line, "%s %s %llx %s", KeyWord, FunctionName, &TempLongAddress, FunctionTypeName);
+        FunctionAddress = (UINT64) TempLongAddress;
+        if (FunctionTypeName [1] == '\0' && (FunctionTypeName [0] == 'f' || FunctionTypeName [0] == 'F')) {
+          fprintf (FvMapFile, "  0x%010llx    ", (unsigned long long) (ImageBaseAddress + FunctionAddress - LinkTimeBaseAddress));
+          fprintf (FvMapFile, "%s\n", FunctionName);
+        }
       }
     } else if (FunctionType == 2) {
       sscanf (Line, "%s %s %llx %s", KeyWord, FunctionName, &TempLongAddress, FunctionTypeName);
@@ -925,8 +978,155 @@ Returns:
   //
   fprintf (FvMapFile, "\n\n");
   fclose (PeMapFile);
-  
+
   return EFI_SUCCESS;
+}
+
+STATIC
+BOOLEAN
+AdjustInternalFfsPadding (
+  IN OUT  EFI_FFS_FILE_HEADER   *FfsFile,
+  IN OUT  MEMORY_FILE           *FvImage,
+  IN      UINTN                 Alignment,
+  IN OUT  UINTN                 *FileSize
+  )
+/*++
+
+Routine Description:
+
+  This function looks for a dedicated alignment padding section in the FFS, and
+  shrinks it to the size required to line up subsequent sections correctly.
+
+Arguments:
+
+  FfsFile               A pointer to Ffs file image.
+  FvImage               The memory image of the FV to adjust it to.
+  Alignment             Current file alignment
+  FileSize              Reference to a variable holding the size of the FFS file
+
+Returns:
+
+  TRUE                  Padding section was found and updated successfully
+  FALSE                 Otherwise
+
+--*/
+{
+  EFI_FILE_SECTION_POINTER  PadSection;
+  UINT8                     *Remainder;
+  EFI_STATUS                Status;
+  UINT32                    FfsHeaderLength;
+  UINT32                    FfsFileLength;
+  UINT32                    PadSize;
+  UINTN                     Misalignment;
+  EFI_FFS_INTEGRITY_CHECK   *IntegrityCheck;
+
+  //
+  // Figure out the misalignment: all FFS sections are aligned relative to the
+  // start of the FFS payload, so use that as the base of the misalignment
+  // computation.
+  //
+  FfsHeaderLength = GetFfsHeaderLength(FfsFile);
+  Misalignment = (UINTN) FvImage->CurrentFilePointer -
+                 (UINTN) FvImage->FileImage + FfsHeaderLength;
+  Misalignment &= Alignment - 1;
+  if (Misalignment == 0) {
+    // Nothing to do, return success
+    return TRUE;
+  }
+
+  //
+  // We only apply this optimization to FFS files with the FIXED attribute set,
+  // since the FFS will not be loadable at arbitrary offsets anymore after
+  // we adjust the size of the padding section.
+  //
+  if ((FfsFile->Attributes & FFS_ATTRIB_FIXED) == 0) {
+    return FALSE;
+  }
+
+  //
+  // Look for a dedicated padding section that we can adjust to compensate
+  // for the misalignment. If such a padding section exists, it precedes all
+  // sections with alignment requirements, and so the adjustment will correct
+  // all of them.
+  //
+  Status = GetSectionByType (FfsFile, EFI_SECTION_FREEFORM_SUBTYPE_GUID, 1,
+             &PadSection);
+  if (EFI_ERROR (Status) ||
+      CompareGuid (&PadSection.FreeformSubtypeSection->SubTypeGuid,
+        &mEfiFfsSectionAlignmentPaddingGuid) != 0) {
+    return FALSE;
+  }
+
+  //
+  // Find out if the size of the padding section is sufficient to compensate
+  // for the misalignment.
+  //
+  PadSize = GetSectionFileLength (PadSection.CommonHeader);
+  if (Misalignment > PadSize - sizeof (EFI_FREEFORM_SUBTYPE_GUID_SECTION)) {
+    return FALSE;
+  }
+
+  //
+  // Move the remainder of the FFS file towards the front, and adjust the
+  // file size output parameter.
+  //
+  Remainder = (UINT8 *) PadSection.CommonHeader + PadSize;
+  memmove (Remainder - Misalignment, Remainder,
+           *FileSize - (UINTN) (Remainder - (UINTN) FfsFile));
+  *FileSize -= Misalignment;
+
+  //
+  // Update the padding section's length with the new values. Note that the
+  // padding is always < 64 KB, so we can ignore EFI_COMMON_SECTION_HEADER2
+  // ExtendedSize.
+  //
+  PadSize -= Misalignment;
+  PadSection.CommonHeader->Size[0] = (UINT8) (PadSize & 0xff);
+  PadSection.CommonHeader->Size[1] = (UINT8) ((PadSize & 0xff00) >> 8);
+  PadSection.CommonHeader->Size[2] = (UINT8) ((PadSize & 0xff0000) >> 16);
+
+  //
+  // Update the FFS header with the new overall length
+  //
+  FfsFileLength = GetFfsFileLength (FfsFile) - Misalignment;
+  if (FfsHeaderLength > sizeof(EFI_FFS_FILE_HEADER)) {
+    ((EFI_FFS_FILE_HEADER2 *)FfsFile)->ExtendedSize = FfsFileLength;
+  } else {
+    FfsFile->Size[0] = (UINT8) (FfsFileLength & 0x000000FF);
+    FfsFile->Size[1] = (UINT8) ((FfsFileLength & 0x0000FF00) >> 8);
+    FfsFile->Size[2] = (UINT8) ((FfsFileLength & 0x00FF0000) >> 16);
+  }
+
+  //
+  // Clear the alignment bits: these have become meaningless now that we have
+  // adjusted the padding section.
+  //
+  FfsFile->Attributes &= ~(FFS_ATTRIB_DATA_ALIGNMENT | FFS_ATTRIB_DATA_ALIGNMENT2);
+
+  //
+  // Recalculate the FFS header checksum. Instead of setting Header and State
+  // both to zero, set Header to (UINT8)(-State) so State preserves its original
+  // value
+  //
+  IntegrityCheck = &FfsFile->IntegrityCheck;
+  IntegrityCheck->Checksum.Header = (UINT8) (0x100 - FfsFile->State);
+  IntegrityCheck->Checksum.File = 0;
+
+  IntegrityCheck->Checksum.Header = CalculateChecksum8 (
+                                      (UINT8 *) FfsFile, FfsHeaderLength);
+
+  if (FfsFile->Attributes & FFS_ATTRIB_CHECKSUM) {
+    //
+    // Ffs header checksum = zero, so only need to calculate ffs body.
+    //
+    IntegrityCheck->Checksum.File = CalculateChecksum8 (
+                                      (UINT8 *) FfsFile + FfsHeaderLength,
+                                      FfsFileLength - FfsHeaderLength);
+  } else {
+    IntegrityCheck->Checksum.File = FFS_FIXED_CHECKSUM;
+  }
+
+  return TRUE;
 }
 
 EFI_STATUS
@@ -973,7 +1173,7 @@ Returns:
   EFI_STATUS            Status;
   UINTN                 Index1;
   UINT8                 FileGuidString[PRINTED_GUID_BUFFER_SIZE];
-  
+
   Index1 = 0;
   //
   // Verify input parameters.
@@ -1002,7 +1202,8 @@ Returns:
   //
   FileBuffer = malloc (FileSize);
   if (FileBuffer == NULL) {
-    Error (NULL, 0, 4001, "Resouce", "memory cannot be allocated!");
+    fclose (NewFile);
+    Error (NULL, 0, 4001, "Resource", "memory cannot be allocated!");
     return EFI_OUT_OF_RESOURCES;
   }
 
@@ -1012,7 +1213,7 @@ Returns:
   // Done with the file, from this point on we will just use the buffer read.
   //
   fclose (NewFile);
-  
+
   //
   // Verify read successful
   //
@@ -1021,20 +1222,20 @@ Returns:
     Error (NULL, 0, 0004, "Error reading file", FvInfo->FvFiles[Index]);
     return EFI_ABORTED;
   }
-  
+
   //
   // For None PI Ffs file, directly add them into FvImage.
   //
   if (!FvInfo->IsPiFvImage) {
     memcpy (FvImage->CurrentFilePointer, FileBuffer, FileSize);
     if (FvInfo->SizeofFvFiles[Index] > FileSize) {
-    	FvImage->CurrentFilePointer += FvInfo->SizeofFvFiles[Index];
+      FvImage->CurrentFilePointer += FvInfo->SizeofFvFiles[Index];
     } else {
-    	FvImage->CurrentFilePointer += FileSize;
+      FvImage->CurrentFilePointer += FileSize;
     }
     goto Done;
   }
-  
+
   //
   // Verify Ffs file
   //
@@ -1061,6 +1262,7 @@ Returns:
     if (CompareGuid ((EFI_GUID *) FileBuffer, &mFileGuidArray [Index1]) == 0) {
       Error (NULL, 0, 2000, "Invalid parameter", "the %dth file and %uth file have the same file GUID.", (unsigned) Index1 + 1, (unsigned) Index + 1);
       PrintGuid ((EFI_GUID *) FileBuffer);
+      free (FileBuffer);
       return EFI_INVALID_PARAMETER;
     }
   }
@@ -1078,7 +1280,7 @@ Returns:
   // Check if alignment is required
   //
   ReadFfsAlignment ((EFI_FFS_FILE_HEADER *) FileBuffer, &CurrentFileAlignment);
-  
+
   //
   // Find the largest alignment of all the FFS files in the FV
   //
@@ -1103,20 +1305,20 @@ Returns:
         return EFI_ABORTED;
       }
       //
-      // Rebase the PE or TE image in FileBuffer of FFS file for XIP 
+      // Rebase the PE or TE image in FileBuffer of FFS file for XIP
       // Rebase for the debug genfvmap tool
       //
       Status = FfsRebase (FvInfo, FvInfo->FvFiles[Index], (EFI_FFS_FILE_HEADER *) FileBuffer, (UINTN) *VtfFileImage - (UINTN) FvImage->FileImage, FvMapFile);
       if (EFI_ERROR (Status)) {
         Error (NULL, 0, 3000, "Invalid", "Could not rebase %s.", FvInfo->FvFiles[Index]);
         return Status;
-      }	  
+      }
       //
       // copy VTF File
       //
       memcpy (*VtfFileImage, FileBuffer, FileSize);
-      
-      PrintGuidToBuffer ((EFI_GUID *) FileBuffer, FileGuidString, sizeof (FileGuidString), TRUE); 
+
+      PrintGuidToBuffer ((EFI_GUID *) FileBuffer, FileGuidString, sizeof (FileGuidString), TRUE);
       fprintf (FvReportFile, "0x%08X %s\n", (unsigned)(UINTN) (((UINT8 *)*VtfFileImage) - (UINTN)FvImage->FileImage), FileGuidString);
 
       free (FileBuffer);
@@ -1135,30 +1337,33 @@ Returns:
   //
   // Add pad file if necessary
   //
-  Status = AddPadFile (FvImage, 1 << CurrentFileAlignment, *VtfFileImage, NULL, FileSize);
-  if (EFI_ERROR (Status)) {
-    Error (NULL, 0, 4002, "Resource", "FV space is full, could not add pad file for data alignment property.");
-    free (FileBuffer);
-    return EFI_ABORTED;
+  if (!AdjustInternalFfsPadding ((EFI_FFS_FILE_HEADER *) FileBuffer, FvImage,
+         1 << CurrentFileAlignment, &FileSize)) {
+    Status = AddPadFile (FvImage, 1 << CurrentFileAlignment, *VtfFileImage, NULL, FileSize);
+    if (EFI_ERROR (Status)) {
+      Error (NULL, 0, 4002, "Resource", "FV space is full, could not add pad file for data alignment property.");
+      free (FileBuffer);
+      return EFI_ABORTED;
+    }
   }
   //
   // Add file
   //
   if ((UINTN) (FvImage->CurrentFilePointer + FileSize) <= (UINTN) (*VtfFileImage)) {
     //
-    // Rebase the PE or TE image in FileBuffer of FFS file for XIP. 
+    // Rebase the PE or TE image in FileBuffer of FFS file for XIP.
     // Rebase Bs and Rt drivers for the debug genfvmap tool.
     //
     Status = FfsRebase (FvInfo, FvInfo->FvFiles[Index], (EFI_FFS_FILE_HEADER *) FileBuffer, (UINTN) FvImage->CurrentFilePointer - (UINTN) FvImage->FileImage, FvMapFile);
-	if (EFI_ERROR (Status)) {
-	  Error (NULL, 0, 3000, "Invalid", "Could not rebase %s.", FvInfo->FvFiles[Index]);
-	  return Status;
-	}	  	
+  if (EFI_ERROR (Status)) {
+    Error (NULL, 0, 3000, "Invalid", "Could not rebase %s.", FvInfo->FvFiles[Index]);
+    return Status;
+  }
     //
     // Copy the file
     //
     memcpy (FvImage->CurrentFilePointer, FileBuffer, FileSize);
-    PrintGuidToBuffer ((EFI_GUID *) FileBuffer, FileGuidString, sizeof (FileGuidString), TRUE); 
+    PrintGuidToBuffer ((EFI_GUID *) FileBuffer, FileGuidString, sizeof (FileGuidString), TRUE);
     fprintf (FvReportFile, "0x%08X %s\n", (unsigned) (FvImage->CurrentFilePointer - FvImage->FileImage), FileGuidString);
     FvImage->CurrentFilePointer += FileSize;
   } else {
@@ -1167,13 +1372,13 @@ Returns:
     return EFI_ABORTED;
   }
   //
-  // Make next file start at QWord Boundry
+  // Make next file start at QWord Boundary
   //
   while (((UINTN) FvImage->CurrentFilePointer & (EFI_FFS_FILE_HEADER_ALIGNMENT - 1)) != 0) {
     FvImage->CurrentFilePointer++;
   }
 
-Done: 
+Done:
   //
   // Free allocated memory.
   //
@@ -1230,7 +1435,7 @@ Returns:
   PadFile = (EFI_FFS_FILE_HEADER *) FvImage->CurrentFilePointer;
 
   //
-  // write PadFile FFS header with PadType, don't need to set PAD file guid in its header. 
+  // write PadFile FFS header with PadType, don't need to set PAD file guid in its header.
   //
   PadFile->Type       = EFI_FV_FILETYPE_FFS_PAD;
   PadFile->Attributes = 0;
@@ -1313,18 +1518,9 @@ Returns:
   UINT16                    MachineType;
   EFI_PHYSICAL_ADDRESS      PeiCorePhysicalAddress;
   EFI_PHYSICAL_ADDRESS      SecCorePhysicalAddress;
-  EFI_PHYSICAL_ADDRESS      *SecCoreEntryAddressPtr;
   INT32                     Ia32SecEntryOffset;
   UINT32                    *Ia32ResetAddressPtr;
-  UINT8                     *BytePointer;
-  UINT8                     *BytePointer2;
-  UINT16                    *WordPointer;
-  UINT16                    CheckSum;
-  UINT32                    IpiVector;
-  UINTN                     Index;
   EFI_FFS_FILE_STATE        SavedState;
-  UINT64                    FitAddress;
-  FIT_TABLE                 *FitTablePtr;
   BOOLEAN                   Vtf0Detected;
   UINT32                    FfsHeaderSize;
   UINT32                    SecHeaderSize;
@@ -1401,12 +1597,12 @@ Returns:
   if (EFI_ERROR (Status)) {
     Error (NULL, 0, 3000, "Invalid", "could not get the PE32 entry point for the SEC core.");
     return EFI_ABORTED;
-  }  
+  }
 
   if (
        Vtf0Detected &&
-       (MachineType == EFI_IMAGE_MACHINE_IA32 ||
-        MachineType == EFI_IMAGE_MACHINE_X64)
+       (MachineType == IMAGE_FILE_MACHINE_I386 ||
+        MachineType == IMAGE_FILE_MACHINE_X64)
      ) {
     //
     // If the SEC core code is IA32 or X64 and the VTF-0 signature
@@ -1422,126 +1618,71 @@ Returns:
   SecCorePhysicalAddress = FvInfo->BaseAddress;
   SecCorePhysicalAddress += (UINTN) Pe32Section.Pe32Section + SecHeaderSize - (UINTN) FvImage->FileImage;
   SecCorePhysicalAddress += EntryPoint;
-  DebugMsg (NULL, 0, 9, "SecCore physical entry point address", "Address = 0x%llX", (unsigned long long) SecCorePhysicalAddress); 
+  DebugMsg (NULL, 0, 9, "SecCore physical entry point address", "Address = 0x%llX", (unsigned long long) SecCorePhysicalAddress);
 
   //
   // Find the PEI Core
   //
+  PeiCorePhysicalAddress = 0;
   Status = GetFileByType (EFI_FV_FILETYPE_PEI_CORE, 1, &PeiCoreFile);
-  if (EFI_ERROR (Status) || PeiCoreFile == NULL) {
-    Error (NULL, 0, 3000, "Invalid", "could not find the PEI core in the FV.");
-    return EFI_ABORTED;
-  }
-  //
-  // PEI Core found, now find PE32 or TE section
-  //
-  Status = GetSectionByType (PeiCoreFile, EFI_SECTION_PE32, 1, &Pe32Section);
-  if (Status == EFI_NOT_FOUND) {
-    Status = GetSectionByType (PeiCoreFile, EFI_SECTION_TE, 1, &Pe32Section);
-  }
+  if (!EFI_ERROR (Status) && (PeiCoreFile != NULL)) {
+    //
+    // PEI Core found, now find PE32 or TE section
+    //
+    Status = GetSectionByType (PeiCoreFile, EFI_SECTION_PE32, 1, &Pe32Section);
+    if (Status == EFI_NOT_FOUND) {
+      Status = GetSectionByType (PeiCoreFile, EFI_SECTION_TE, 1, &Pe32Section);
+    }
 
-  if (EFI_ERROR (Status)) {
-    Error (NULL, 0, 3000, "Invalid", "could not find either a PE32 or a TE section in PEI core file.");
-    return EFI_ABORTED;
-  }
+    if (EFI_ERROR (Status)) {
+      Error (NULL, 0, 3000, "Invalid", "could not find either a PE32 or a TE section in PEI core file.");
+      return EFI_ABORTED;
+    }
 
-  SecHeaderSize = GetSectionHeaderLength(Pe32Section.CommonHeader);
-  Status = GetPe32Info (
-            (VOID *) ((UINTN) Pe32Section.Pe32Section + SecHeaderSize),
-            &EntryPoint,
-            &BaseOfCode,
-            &MachineType
-            );
+    SecHeaderSize = GetSectionHeaderLength(Pe32Section.CommonHeader);
+    Status = GetPe32Info (
+              (VOID *) ((UINTN) Pe32Section.Pe32Section + SecHeaderSize),
+              &EntryPoint,
+              &BaseOfCode,
+              &MachineType
+              );
 
-  if (EFI_ERROR (Status)) {
-    Error (NULL, 0, 3000, "Invalid", "could not get the PE32 entry point for the PEI core.");
-    return EFI_ABORTED;
-  }
-  //
-  // Physical address is FV base + offset of PE32 + offset of the entry point
-  //
-  PeiCorePhysicalAddress = FvInfo->BaseAddress;
-  PeiCorePhysicalAddress += (UINTN) Pe32Section.Pe32Section + SecHeaderSize - (UINTN) FvImage->FileImage;
-  PeiCorePhysicalAddress += EntryPoint;
-  DebugMsg (NULL, 0, 9, "PeiCore physical entry point address", "Address = 0x%llX", (unsigned long long) PeiCorePhysicalAddress);
-
-  if (MachineType == EFI_IMAGE_MACHINE_IA64) {
-    //
-    // Update PEI_CORE address
-    //
-    //
-    // Set the uncached attribute bit in the physical address
-    //
-    PeiCorePhysicalAddress |= 0x8000000000000000ULL;
-
-    //
-    // Check if address is aligned on a 16 byte boundary
-    //
-    if (PeiCorePhysicalAddress & 0xF) {
-      Error (NULL, 0, 3000, "Invalid",
-        "PEI_CORE entry point is not aligned on a 16 byte boundary, address specified is %llXh.",
-        (unsigned long long) PeiCorePhysicalAddress
-        );
+    if (EFI_ERROR (Status)) {
+      Error (NULL, 0, 3000, "Invalid", "could not get the PE32 entry point for the PEI core.");
       return EFI_ABORTED;
     }
     //
-    // First Get the FIT table address
+    // Physical address is FV base + offset of PE32 + offset of the entry point
     //
-    FitAddress  = (*(UINT64 *) (FvImage->Eof - IPF_FIT_ADDRESS_OFFSET)) & 0xFFFFFFFF;
+    PeiCorePhysicalAddress = FvInfo->BaseAddress;
+    PeiCorePhysicalAddress += (UINTN) Pe32Section.Pe32Section + SecHeaderSize - (UINTN) FvImage->FileImage;
+    PeiCorePhysicalAddress += EntryPoint;
+    DebugMsg (NULL, 0, 9, "PeiCore physical entry point address", "Address = 0x%llX", (unsigned long long) PeiCorePhysicalAddress);
+  }
 
-    FitTablePtr = (FIT_TABLE *) (FvImage->FileImage + (FitAddress - FvInfo->BaseAddress));
+if (MachineType == IMAGE_FILE_MACHINE_I386 || MachineType == IMAGE_FILE_MACHINE_X64) {
+    if (PeiCorePhysicalAddress != 0) {
+      //
+      // Get the location to update
+      //
+      Ia32ResetAddressPtr  = (UINT32 *) ((UINTN) FvImage->Eof - IA32_PEI_CORE_ENTRY_OFFSET);
 
-    Status      = UpdatePeiCoreEntryInFit (FitTablePtr, PeiCorePhysicalAddress);
-
-    if (!EFI_ERROR (Status)) {
-      UpdateFitCheckSum (FitTablePtr);
+      //
+      // Write lower 32 bits of physical address for Pei Core entry
+      //
+      *Ia32ResetAddressPtr = (UINT32) PeiCorePhysicalAddress;
     }
-
-    //
-    // Update SEC_CORE address
-    //
-    //
-    // Set the uncached attribute bit in the physical address
-    //
-    SecCorePhysicalAddress |= 0x8000000000000000ULL;
-    //
-    // Check if address is aligned on a 16 byte boundary
-    //
-    if (SecCorePhysicalAddress & 0xF) {
-      Error (NULL, 0, 3000, "Invalid",
-        "SALE_ENTRY entry point is not aligned on a 16 byte boundary, address specified is %llXh.",
-        (unsigned long long) SecCorePhysicalAddress
-        );
-      return EFI_ABORTED;
-    }
-    //
-    // Update the address
-    //
-    SecCoreEntryAddressPtr  = (EFI_PHYSICAL_ADDRESS *) ((UINTN) FvImage->Eof - IPF_SALE_ENTRY_ADDRESS_OFFSET);
-    *SecCoreEntryAddressPtr = SecCorePhysicalAddress;
-
-  } else if (MachineType == EFI_IMAGE_MACHINE_IA32 || MachineType == EFI_IMAGE_MACHINE_X64) {
-    //
-    // Get the location to update
-    //
-    Ia32ResetAddressPtr  = (UINT32 *) ((UINTN) FvImage->Eof - IA32_PEI_CORE_ENTRY_OFFSET);
-
-    //
-    // Write lower 32 bits of physical address for Pei Core entry
-    //
-    *Ia32ResetAddressPtr = (UINT32) PeiCorePhysicalAddress;
-    
     //
     // Write SecCore Entry point relative address into the jmp instruction in reset vector.
-    // 
+    //
     Ia32ResetAddressPtr  = (UINT32 *) ((UINTN) FvImage->Eof - IA32_SEC_CORE_ENTRY_OFFSET);
-    
+
     Ia32SecEntryOffset   = (INT32) (SecCorePhysicalAddress - (FV_IMAGES_TOP_ADDRESS - IA32_SEC_CORE_ENTRY_OFFSET + 2));
     if (Ia32SecEntryOffset <= -65536) {
       Error (NULL, 0, 3000, "Invalid", "The SEC EXE file size is too large, it must be less than 64K.");
       return STATUS_ERROR;
     }
-    
+
     *(UINT16 *) Ia32ResetAddressPtr = (UINT16) Ia32SecEntryOffset;
 
     //
@@ -1550,71 +1691,12 @@ Returns:
     Ia32ResetAddressPtr   = (UINT32 *) ((UINTN) FvImage->Eof - 4);
     *Ia32ResetAddressPtr  = (UINT32) (FvInfo->BaseAddress);
     DebugMsg (NULL, 0, 9, "update BFV base address in the top FV image", "BFV base address = 0x%llX.", (unsigned long long) FvInfo->BaseAddress);
-
-    //
-    // Update the Startup AP in the FVH header block ZeroVector region.
-    //
-    BytePointer   = (UINT8 *) ((UINTN) FvImage->FileImage);
-    if (FvInfo->Size <= 0x10000) {
-      BytePointer2 = m64kRecoveryStartupApDataArray;
-    } else if (FvInfo->Size <= 0x20000) {
-      BytePointer2 = m128kRecoveryStartupApDataArray;
-    } else {
-      BytePointer2 = m128kRecoveryStartupApDataArray;
-      //
-      // Find the position to place Ap reset vector, the offset
-      // between the position and the end of Fvrecovery.fv file
-      // should not exceed 128kB to prevent Ap reset vector from
-      // outside legacy E and F segment
-      //
-      Status = FindApResetVectorPosition (FvImage, &BytePointer);
-      if (EFI_ERROR (Status)) {
-        Error (NULL, 0, 3000, "Invalid", "FV image does not have enough space to place AP reset vector. The FV image needs to reserve at least 4KB of unused space.");
-        return EFI_ABORTED;
-      }
-    }
-
-    for (Index = 0; Index < SIZEOF_STARTUP_DATA_ARRAY; Index++) {
-      BytePointer[Index] = BytePointer2[Index];
-    }
-    //
-    // Calculate the checksum
-    //
-    CheckSum              = 0x0000;
-    WordPointer = (UINT16 *) (BytePointer);
-    for (Index = 0; Index < SIZEOF_STARTUP_DATA_ARRAY / 2; Index++) {
-      CheckSum = (UINT16) (CheckSum + ((UINT16) *WordPointer));
-      WordPointer++;
-    }
-    //
-    // Update the checksum field
-    //
-    WordPointer   = (UINT16 *) (BytePointer + SIZEOF_STARTUP_DATA_ARRAY - 2);
-    *WordPointer  = (UINT16) (0x10000 - (UINT32) CheckSum);
-    
-    //
-    // IpiVector at the 4k aligned address in the top 2 blocks in the PEI FV. 
-    //
-    IpiVector  = (UINT32) (FV_IMAGES_TOP_ADDRESS - ((UINTN) FvImage->Eof - (UINTN) BytePointer));
-    DebugMsg (NULL, 0, 9, "Startup AP Vector address", "IpiVector at 0x%X", (unsigned) IpiVector);
-    if ((IpiVector & 0xFFF) != 0) {
-      Error (NULL, 0, 3000, "Invalid", "Startup AP Vector address are not 4K aligned, because the FV size is not 4K aligned");
-      return EFI_ABORTED;
-    }
-    IpiVector  = IpiVector >> 12;
-    IpiVector  = IpiVector & 0xFF;
-
-    //
-    // Write IPI Vector at Offset FvrecoveryFileSize - 8
-    //
-    Ia32ResetAddressPtr   = (UINT32 *) ((UINTN) FvImage->Eof - 8);
-    *Ia32ResetAddressPtr  = IpiVector;
-  } else if (MachineType == EFI_IMAGE_MACHINE_ARMT) {
+  } else if (MachineType == IMAGE_FILE_MACHINE_ARMTHUMB_MIXED) {
     //
     // Since the ARM reset vector is in the FV Header you really don't need a
     // Volume Top File, but if you have one for some reason don't crash...
     //
-  } else if (MachineType == EFI_IMAGE_MACHINE_AARCH64) {
+  } else if (MachineType == IMAGE_FILE_MACHINE_ARM64) {
     //
     // Since the AArch64 reset vector is in the FV Header you really don't need a
     // Volume Top File, but if you have one for some reason don't crash...
@@ -1645,6 +1727,244 @@ Returns:
   return EFI_SUCCESS;
 }
 
+EFI_STATUS
+FindCorePeSection(
+  IN VOID                       *FvImageBuffer,
+  IN UINT64                     FvSize,
+  IN EFI_FV_FILETYPE            FileType,
+  OUT EFI_FILE_SECTION_POINTER  *Pe32Section
+  )
+/*++
+
+Routine Description:
+
+  Recursively searches the FV for the FFS file of specified type (typically
+  SEC or PEI core) and extracts the PE32 section for further processing.
+
+Arguments:
+
+  FvImageBuffer   Buffer containing FV data
+  FvSize          Size of the FV
+  FileType        Type of FFS file to search for
+  Pe32Section     PE32 section pointer when FFS file is found.
+
+Returns:
+
+  EFI_SUCCESS             Function Completed successfully.
+  EFI_ABORTED             Error encountered.
+  EFI_INVALID_PARAMETER   A required parameter was NULL.
+  EFI_NOT_FOUND           Core file not found.
+
+--*/
+{
+  EFI_STATUS                  Status;
+  EFI_FIRMWARE_VOLUME_HEADER  *OrigFvHeader;
+  UINT32                      OrigFvLength;
+  EFI_FFS_FILE_HEADER         *CoreFfsFile;
+  UINTN                       FvImageFileCount;
+  EFI_FFS_FILE_HEADER         *FvImageFile;
+  UINTN                       EncapFvSectionCount;
+  EFI_FILE_SECTION_POINTER    EncapFvSection;
+  EFI_FIRMWARE_VOLUME_HEADER  *EncapsulatedFvHeader;
+
+  if (Pe32Section == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  //
+  // Initialize FV library, saving previous values
+  //
+  OrigFvHeader = (EFI_FIRMWARE_VOLUME_HEADER *)NULL;
+  GetFvHeader (&OrigFvHeader, &OrigFvLength);
+  InitializeFvLib(FvImageBuffer, (UINT32)FvSize);
+
+  //
+  // First see if we can obtain the file directly in outer FV
+  //
+  Status = GetFileByType(FileType, 1, &CoreFfsFile);
+  if (!EFI_ERROR(Status) && (CoreFfsFile != NULL) ) {
+
+    //
+    // Core found, now find PE32 or TE section
+    //
+    Status = GetSectionByType(CoreFfsFile, EFI_SECTION_PE32, 1, Pe32Section);
+    if (EFI_ERROR(Status)) {
+      Status = GetSectionByType(CoreFfsFile, EFI_SECTION_TE, 1, Pe32Section);
+    }
+
+    if (EFI_ERROR(Status)) {
+      Error(NULL, 0, 3000, "Invalid", "could not find a PE32 section in the core file.");
+      return EFI_ABORTED;
+    }
+
+    //
+    // Core PE/TE section, found, return
+    //
+    Status = EFI_SUCCESS;
+    goto EarlyExit;
+  }
+
+  //
+  // File was not found, look for FV Image file
+  //
+
+  // iterate through all FV image files in outer FV
+  for (FvImageFileCount = 1;; FvImageFileCount++) {
+
+    Status = GetFileByType(EFI_FV_FILETYPE_FIRMWARE_VOLUME_IMAGE, FvImageFileCount, &FvImageFile);
+
+    if (EFI_ERROR(Status) || (FvImageFile == NULL) ) {
+      // exit FV image file loop, no more found
+      break;
+    }
+
+    // Found an fv image file, look for an FV image section.  The PI spec does not
+    // preclude multiple FV image sections so we loop accordingly.
+    for (EncapFvSectionCount = 1;; EncapFvSectionCount++) {
+
+      // Look for the next FV image section.  The section search code will
+      // iterate into encapsulation sections.  For example, it will iterate
+      // into an EFI_SECTION_GUID_DEFINED encapsulation section to find the
+      // EFI_SECTION_FIRMWARE_VOLUME_IMAGE sections contained therein.
+      Status = GetSectionByType(FvImageFile, EFI_SECTION_FIRMWARE_VOLUME_IMAGE, EncapFvSectionCount, &EncapFvSection);
+
+      if (EFI_ERROR(Status)) {
+        // exit section inner loop, no more found
+        break;
+      }
+
+      EncapsulatedFvHeader = (EFI_FIRMWARE_VOLUME_HEADER *)((UINT8 *)EncapFvSection.FVImageSection + GetSectionHeaderLength(EncapFvSection.FVImageSection));
+
+      // recurse to search the encapsulated FV for this core file type
+      Status = FindCorePeSection(EncapsulatedFvHeader, EncapsulatedFvHeader->FvLength, FileType, Pe32Section);
+
+      if (!EFI_ERROR(Status)) {
+        // we found the core in the capsulated image, success
+        goto EarlyExit;
+      }
+
+    } // end encapsulated fv image section loop
+  } // end fv image file loop
+
+  // core was not found
+  Status = EFI_NOT_FOUND;
+
+EarlyExit:
+
+  // restore FV lib values
+  if(OrigFvHeader != NULL) {
+    InitializeFvLib(OrigFvHeader, OrigFvLength);
+  }
+
+  return Status;
+}
+
+EFI_STATUS
+GetCoreMachineType(
+  IN  EFI_FILE_SECTION_POINTER     Pe32Section,
+  OUT UINT16                      *CoreMachineType
+  )
+/*++
+
+Routine Description:
+
+  Returns the machine type of a P32 image, typically SEC or PEI core.
+
+Arguments:
+
+  Pe32Section       PE32 section data
+  CoreMachineType   The extracted machine type
+
+Returns:
+
+  EFI_SUCCESS             Function Completed successfully.
+  EFI_ABORTED             Error encountered.
+  EFI_INVALID_PARAMETER   A required parameter was NULL.
+
+--*/
+{
+  EFI_STATUS                  Status;
+  UINT32                      EntryPoint;
+  UINT32                      BaseOfCode;
+
+  if (CoreMachineType == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Status = GetPe32Info(
+    (VOID *)((UINTN)Pe32Section.Pe32Section + GetSectionHeaderLength(Pe32Section.CommonHeader)),
+    &EntryPoint,
+    &BaseOfCode,
+    CoreMachineType
+    );
+  if (EFI_ERROR(Status)) {
+    Error(NULL, 0, 3000, "Invalid", "could not get the PE32 machine type for the core.");
+    return EFI_ABORTED;
+  }
+
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+GetCoreEntryPointAddress(
+  IN VOID                         *FvImageBuffer,
+  IN FV_INFO                      *FvInfo,
+  IN  EFI_FILE_SECTION_POINTER     Pe32Section,
+  OUT EFI_PHYSICAL_ADDRESS        *CoreEntryAddress
+)
+/*++
+
+Routine Description:
+
+  Returns the physical address of the core (SEC or PEI) entry point.
+
+Arguments:
+
+  FvImageBuffer     Pointer to buffer containing FV data
+  FvInfo            Info for the parent FV
+  Pe32Section       PE32 section data
+  CoreEntryAddress  The extracted core entry physical address
+
+Returns:
+
+  EFI_SUCCESS             Function Completed successfully.
+  EFI_ABORTED             Error encountered.
+  EFI_INVALID_PARAMETER   A required parameter was NULL.
+
+--*/
+{
+  EFI_STATUS                  Status;
+  UINT32                      EntryPoint;
+  UINT32                      BaseOfCode;
+  UINT16                      MachineType;
+  EFI_PHYSICAL_ADDRESS        EntryPhysicalAddress;
+
+  if (CoreEntryAddress == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Status = GetPe32Info(
+    (VOID *)((UINTN)Pe32Section.Pe32Section + GetSectionHeaderLength(Pe32Section.CommonHeader)),
+    &EntryPoint,
+    &BaseOfCode,
+    &MachineType
+    );
+  if (EFI_ERROR(Status)) {
+    Error(NULL, 0, 3000, "Invalid", "could not get the PE32 entry point for the core.");
+    return EFI_ABORTED;
+  }
+
+  //
+  // Physical address is FV base + offset of PE32 + offset of the entry point
+  //
+  EntryPhysicalAddress = FvInfo->BaseAddress;
+  EntryPhysicalAddress += (UINTN)Pe32Section.Pe32Section + GetSectionHeaderLength(Pe32Section.CommonHeader) - (UINTN)FvImageBuffer;
+  EntryPhysicalAddress += EntryPoint;
+
+  *CoreEntryAddress = EntryPhysicalAddress;
+
+  return EFI_SUCCESS;
+}
 
 EFI_STATUS
 UpdateArmResetVectorIfNeeded (
@@ -1654,15 +1974,15 @@ UpdateArmResetVectorIfNeeded (
 /*++
 
 Routine Description:
-  This parses the FV looking for SEC and patches that address into the 
+  This parses the FV looking for SEC and patches that address into the
   beginning of the FV header.
 
   For ARM32 the reset vector is at 0x00000000 or 0xFFFF0000.
   For AArch64 the reset vector is at 0x00000000.
 
-  This would commonly map to the first entry in the ROM. 
+  This would commonly map to the first entry in the ROM.
   ARM32 Exceptions:
-  Reset            +0    
+  Reset            +0
   Undefined        +4
   SWI              +8
   Prefetch Abort   +12
@@ -1672,15 +1992,15 @@ Routine Description:
 
   We support two schemes on ARM.
   1) Beginning of the FV is the reset vector
-  2) Reset vector is data bytes FDF file and that code branches to reset vector 
+  2) Reset vector is data bytes FDF file and that code branches to reset vector
     in the beginning of the FV (fixed size offset).
 
   Need to have the jump for the reset vector at location zero.
   We also need to store the address or PEI (if it exists).
-  We stub out a return from interrupt in case the debugger 
+  We stub out a return from interrupt in case the debugger
    is using SWI (not done for AArch64, not enough space in struct).
-  The optional entry to the common exception handler is 
-   to support full featured exception handling from ROM and is currently 
+  The optional entry to the common exception handler is
+   to support full featured exception handling from ROM and is currently
     not support by this tool.
 
 Arguments:
@@ -1696,23 +2016,225 @@ Returns:
 
 --*/
 {
-  EFI_FFS_FILE_HEADER       *PeiCoreFile;
-  EFI_FFS_FILE_HEADER       *SecCoreFile;
+  EFI_STATUS                  Status;
+  EFI_FILE_SECTION_POINTER    SecPe32;
+  EFI_FILE_SECTION_POINTER    PeiPe32;
+  BOOLEAN                     UpdateVectorSec = FALSE;
+  BOOLEAN                     UpdateVectorPei = FALSE;
+  UINT16                      MachineType = 0;
+  EFI_PHYSICAL_ADDRESS        SecCoreEntryAddress = 0;
+  UINT16                      PeiMachineType = 0;
+  EFI_PHYSICAL_ADDRESS        PeiCoreEntryAddress = 0;
+
+  //
+  // Verify input parameters
+  //
+  if (FvImage == NULL || FvInfo == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  //
+  // Locate an SEC Core instance and if found extract the machine type and entry point address
+  //
+  Status = FindCorePeSection(FvImage->FileImage, FvInfo->Size, EFI_FV_FILETYPE_SECURITY_CORE, &SecPe32);
+  if (!EFI_ERROR(Status)) {
+
+    Status = GetCoreMachineType(SecPe32, &MachineType);
+    if (EFI_ERROR(Status)) {
+      Error(NULL, 0, 3000, "Invalid", "Could not get the PE32 machine type for SEC Core.");
+      return EFI_ABORTED;
+    }
+
+    Status = GetCoreEntryPointAddress(FvImage->FileImage, FvInfo, SecPe32, &SecCoreEntryAddress);
+    if (EFI_ERROR(Status)) {
+      Error(NULL, 0, 3000, "Invalid", "Could not get the PE32 entry point address for SEC Core.");
+      return EFI_ABORTED;
+    }
+
+    VerboseMsg("UpdateArmResetVectorIfNeeded found SEC core entry at 0x%llx", (unsigned long long)SecCoreEntryAddress);
+    UpdateVectorSec = TRUE;
+  }
+
+  //
+  // Locate a PEI Core instance and if found extract the machine type and entry point address
+  //
+  Status = FindCorePeSection(FvImage->FileImage, FvInfo->Size, EFI_FV_FILETYPE_PEI_CORE, &PeiPe32);
+  if (!EFI_ERROR(Status)) {
+
+    Status = GetCoreMachineType(PeiPe32, &PeiMachineType);
+    if (EFI_ERROR(Status)) {
+      Error(NULL, 0, 3000, "Invalid", "Could not get the PE32 machine type for PEI Core.");
+      return EFI_ABORTED;
+    }
+
+    Status = GetCoreEntryPointAddress(FvImage->FileImage, FvInfo, PeiPe32, &PeiCoreEntryAddress);
+    if (EFI_ERROR(Status)) {
+      Error(NULL, 0, 3000, "Invalid", "Could not get the PE32 entry point address for PEI Core.");
+      return EFI_ABORTED;
+    }
+
+    VerboseMsg("UpdateArmResetVectorIfNeeded found PEI core entry at 0x%llx", (unsigned long long)PeiCoreEntryAddress);
+
+    // if we previously found an SEC Core make sure machine types match
+    if (UpdateVectorSec && (MachineType != PeiMachineType)) {
+      Error(NULL, 0, 3000, "Invalid", "SEC and PEI machine types do not match, can't update reset vector");
+      return EFI_ABORTED;
+    }
+    else {
+      MachineType = PeiMachineType;
+    }
+
+    UpdateVectorPei = TRUE;
+  }
+
+  if (!UpdateVectorSec && !UpdateVectorPei) {
+    return EFI_SUCCESS;
+  }
+
+  if (MachineType == IMAGE_FILE_MACHINE_ARMTHUMB_MIXED) {
+    // ARM: Array of 4 UINT32s:
+    // 0 - is branch relative to SEC entry point
+    // 1 - PEI Entry Point
+    // 2 - movs pc,lr for a SWI handler
+    // 3 - Place holder for Common Exception Handler
+    UINT32                      ResetVector[4];
+
+    memset(ResetVector, 0, sizeof (ResetVector));
+
+    // if we found an SEC core entry point then generate a branch instruction
+    // to it and populate a debugger SWI entry as well
+    if (UpdateVectorSec) {
+      UINT32                    EntryOffset;
+
+      VerboseMsg("UpdateArmResetVectorIfNeeded updating ARM SEC vector");
+
+      EntryOffset = (INT32)(SecCoreEntryAddress - FvInfo->BaseAddress);
+
+      if (EntryOffset > ARM_JUMP_OFFSET_MAX) {
+          Error(NULL, 0, 3000, "Invalid", "SEC Entry point offset above 1MB of the start of the FV");
+        return EFI_ABORTED;
+      }
+
+      if ((SecCoreEntryAddress & 1) != 0) {
+        ResetVector[0] = ARM_JUMP_TO_THUMB(EntryOffset);
+      } else {
+        ResetVector[0] = ARM_JUMP_TO_ARM(EntryOffset);
+      }
+
+      // SWI handler movs   pc,lr. Just in case a debugger uses SWI
+      ResetVector[2] = ARM_RETURN_FROM_EXCEPTION;
+
+      // Place holder to support a common interrupt handler from ROM.
+      // Currently not supported. For this to be used the reset vector would not be in this FV
+      // and the exception vectors would be hard coded in the ROM and just through this address
+      // to find a common handler in the a module in the FV.
+      ResetVector[3] = 0;
+    }
+
+    // if a PEI core entry was found place its address in the vector area
+    if (UpdateVectorPei) {
+
+      VerboseMsg("UpdateArmResetVectorIfNeeded updating ARM PEI address");
+
+      // Address of PEI Core, if we have one
+      ResetVector[1] = (UINT32)PeiCoreEntryAddress;
+    }
+
+    //
+    // Copy to the beginning of the FV
+    //
+    memcpy(FvImage->FileImage, ResetVector, sizeof (ResetVector));
+
+  } else if (MachineType == IMAGE_FILE_MACHINE_ARM64) {
+    // AArch64: Used as UINT64 ResetVector[2]
+    // 0 - is branch relative to SEC entry point
+    // 1 - PEI Entry Point
+    UINT64                      ResetVector[2];
+
+    memset(ResetVector, 0, sizeof (ResetVector));
+
+    /* NOTE:
+    ARMT above has an entry in ResetVector[2] for SWI. The way we are using the ResetVector
+    array at the moment, for AArch64, does not allow us space for this as the header only
+    allows for a fixed amount of bytes at the start. If we are sure that UEFI will live
+    within the first 4GB of addressable RAM we could potentially adopt the same ResetVector
+    layout as above. But for the moment we replace the four 32bit vectors with two 64bit
+    vectors in the same area of the Image heasder. This allows UEFI to start from a 64bit
+    base.
+    */
+
+    // if we found an SEC core entry point then generate a branch instruction to it
+    if (UpdateVectorSec) {
+
+      VerboseMsg("UpdateArmResetVectorIfNeeded updating AArch64 SEC vector");
+
+      ResetVector[0] = (UINT64)(SecCoreEntryAddress - FvInfo->BaseAddress) >> 2;
+
+      // B SecEntryPoint - signed_immed_26 part +/-128MB offset
+      if (ResetVector[0] > 0x03FFFFFF) {
+        Error(NULL, 0, 3000, "Invalid", "SEC Entry point must be within 128MB of the start of the FV");
+        return EFI_ABORTED;
+      }
+      // Add opcode for an unconditional branch with no link. i.e.: " B SecEntryPoint"
+      ResetVector[0] |= ARM64_UNCONDITIONAL_JUMP_INSTRUCTION;
+    }
+
+    // if a PEI core entry was found place its address in the vector area
+    if (UpdateVectorPei) {
+
+      VerboseMsg("UpdateArmResetVectorIfNeeded updating AArch64 PEI address");
+
+      // Address of PEI Core, if we have one
+      ResetVector[1] = (UINT64)PeiCoreEntryAddress;
+    }
+
+    //
+    // Copy to the beginning of the FV
+    //
+    memcpy(FvImage->FileImage, ResetVector, sizeof (ResetVector));
+
+  } else {
+    Error(NULL, 0, 3000, "Invalid", "Unknown machine type");
+    return EFI_ABORTED;
+  }
+
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+UpdateRiscvResetVectorIfNeeded (
+  MEMORY_FILE            *FvImage,
+  FV_INFO                *FvInfo
+  )
+/*++
+
+Routine Description:
+  This parses the FV looking for SEC and patches that address into the
+  beginning of the FV header.
+
+  For RISC-V ISA, the reset vector is at 0xfff~ff00h or 200h
+
+Arguments:
+  FvImage       Memory file for the FV memory image/
+  FvInfo        Information read from INF file.
+
+Returns:
+
+  EFI_SUCCESS             Function Completed successfully.
+  EFI_ABORTED             Error encountered.
+  EFI_INVALID_PARAMETER   A required parameter was NULL.
+  EFI_NOT_FOUND           PEI Core file not found.
+
+--*/
+{
   EFI_STATUS                Status;
-  EFI_FILE_SECTION_POINTER  Pe32Section;
-  UINT32                    EntryPoint;
-  UINT32                    BaseOfCode;
   UINT16                    MachineType;
-  EFI_PHYSICAL_ADDRESS      PeiCorePhysicalAddress;
-  EFI_PHYSICAL_ADDRESS      SecCorePhysicalAddress;
-  INT32                     ResetVector[4]; // ARM32:
-                                            // 0 - is branch relative to SEC entry point
-                                            // 1 - PEI Entry Point
-                                            // 2 - movs pc,lr for a SWI handler
-                                            // 3 - Place holder for Common Exception Handler
-                                            // AArch64: Used as UINT64 ResetVector[2]
-                                            // 0 - is branch relative to SEC entry point
-                                            // 1 - PEI Entry Point
+  EFI_FILE_SECTION_POINTER  SecPe32;
+  EFI_PHYSICAL_ADDRESS      SecCoreEntryAddress;
+
+  UINT32 bSecCore;
+  UINT32 tmp;
+
 
   //
   // Verify input parameters
@@ -1728,205 +2250,143 @@ Returns:
   //
   // Find the Sec Core
   //
-  Status = GetFileByType (EFI_FV_FILETYPE_SECURITY_CORE, 1, &SecCoreFile);
-  if (EFI_ERROR (Status) || SecCoreFile == NULL) {
-    //
-    // Maybe hardware does SEC job and we only have PEI Core?
-    //
-
-    //
-    // Find the PEI Core. It may not exist if SEC loads DXE core directly
-    //
-    PeiCorePhysicalAddress = 0;
-    Status = GetFileByType (EFI_FV_FILETYPE_PEI_CORE, 1, &PeiCoreFile);
-    if (!EFI_ERROR (Status) && PeiCoreFile != NULL) {
-      //
-      // PEI Core found, now find PE32 or TE section
-      //
-      Status = GetSectionByType (PeiCoreFile, EFI_SECTION_PE32, 1, &Pe32Section);
-      if (Status == EFI_NOT_FOUND) {
-        Status = GetSectionByType (PeiCoreFile, EFI_SECTION_TE, 1, &Pe32Section);
-      }
-    
-      if (EFI_ERROR (Status)) {
-        Error (NULL, 0, 3000, "Invalid", "could not find either a PE32 or a TE section in PEI core file!");
-        return EFI_ABORTED;
-      }
-    
-      Status = GetPe32Info (
-                (VOID *) ((UINTN) Pe32Section.Pe32Section + GetSectionHeaderLength(Pe32Section.CommonHeader)),
-                &EntryPoint,
-                &BaseOfCode,
-                &MachineType
-                );
-    
-      if (EFI_ERROR (Status)) {
-        Error (NULL, 0, 3000, "Invalid", "could not get the PE32 entry point for the PEI core!");
-        return EFI_ABORTED;
-      }
-      //
-      // Physical address is FV base + offset of PE32 + offset of the entry point
-      //
-      PeiCorePhysicalAddress = FvInfo->BaseAddress;
-      PeiCorePhysicalAddress += (UINTN) Pe32Section.Pe32Section + GetSectionHeaderLength(Pe32Section.CommonHeader) - (UINTN) FvImage->FileImage;
-      PeiCorePhysicalAddress += EntryPoint;
-      DebugMsg (NULL, 0, 9, "PeiCore physical entry point address", "Address = 0x%llX", (unsigned long long) PeiCorePhysicalAddress);
-
-      if (MachineType == EFI_IMAGE_MACHINE_ARMT || MachineType == EFI_IMAGE_MACHINE_AARCH64) {
-        memset (ResetVector, 0, sizeof (ResetVector));
-        // Address of PEI Core, if we have one
-        ResetVector[1] = (UINT32)PeiCorePhysicalAddress;
-      }
-      
-      //
-      // Copy to the beginning of the FV 
-      //
-      memcpy ((UINT8 *) ((UINTN) FvImage->FileImage), ResetVector, sizeof (ResetVector));
-
-    }
-
+  Status = FindCorePeSection(FvImage->FileImage, FvInfo->Size, EFI_FV_FILETYPE_SECURITY_CORE, &SecPe32);
+  if(EFI_ERROR(Status)) {
+    printf("skip because Secutiry Core not found\n");
     return EFI_SUCCESS;
   }
-  
-  //
-  // Sec Core found, now find PE32 section
-  //
-  Status = GetSectionByType (SecCoreFile, EFI_SECTION_PE32, 1, &Pe32Section);
-  if (Status == EFI_NOT_FOUND) {
-    Status = GetSectionByType (SecCoreFile, EFI_SECTION_TE, 1, &Pe32Section);
-  }
 
-  if (EFI_ERROR (Status)) {
-    Error (NULL, 0, 3000, "Invalid", "could not find a PE32 section in the SEC core file.");
+  DebugMsg (NULL, 0, 9, "Update SEC core in FV Header", NULL);
+
+  Status = GetCoreMachineType(SecPe32, &MachineType);
+  if(EFI_ERROR(Status)) {
+    Error(NULL, 0, 3000, "Invalid", "Could not get the PE32 machine type for SEC core.");
     return EFI_ABORTED;
   }
 
-  Status = GetPe32Info (
-            (VOID *) ((UINTN) Pe32Section.Pe32Section + GetSectionHeaderLength(Pe32Section.CommonHeader)),
-            &EntryPoint,
-            &BaseOfCode,
-            &MachineType
-            );
-  if (EFI_ERROR (Status)) {
-    Error (NULL, 0, 3000, "Invalid", "could not get the PE32 entry point for the SEC core.");
+  if (MachineType != IMAGE_FILE_MACHINE_RISCV64) {
+    Error(NULL, 0, 3000, "Invalid", "Could not update SEC core because Machine type is not RiscV.");
     return EFI_ABORTED;
   }
-  
-  if ((MachineType != EFI_IMAGE_MACHINE_ARMT) && (MachineType != EFI_IMAGE_MACHINE_AARCH64)) {
-    //
-    // If SEC is not ARM we have nothing to do
-    //
+
+  Status = GetCoreEntryPointAddress(FvImage->FileImage, FvInfo, SecPe32, &SecCoreEntryAddress);
+  if(EFI_ERROR(Status)) {
+    Error(NULL, 0, 3000, "Invalid", "Could not get the PE32 entry point address for SEC Core.");
+    return EFI_ABORTED;
+  }
+
+  VerboseMsg("SecCore entry point Address = 0x%llX", (unsigned long long) SecCoreEntryAddress);
+  VerboseMsg("BaseAddress = 0x%llX", (unsigned long long) FvInfo->BaseAddress);
+  bSecCore = (UINT32)(SecCoreEntryAddress - FvInfo->BaseAddress);
+  VerboseMsg("offset = 0x%X", bSecCore);
+
+  if(bSecCore > 0x0fffff) {
+    Error(NULL, 0, 3000, "Invalid", "SEC Entry point must be within 1MB of start of the FV");
+    return EFI_ABORTED;
+  }
+
+  tmp = bSecCore;
+  bSecCore = 0;
+  //J-type
+  bSecCore  = (tmp&0x100000)<<11; //imm[20]    at bit[31]
+  bSecCore |= (tmp&0x0007FE)<<20; //imm[10:1]  at bit[30:21]
+  bSecCore |= (tmp&0x000800)<<9;  //imm[11]    at bit[20]
+  bSecCore |= (tmp&0x0FF000);     //imm[19:12] at bit[19:12]
+  bSecCore |= 0x6F; //JAL opcode
+
+  memcpy(FvImage->FileImage, &bSecCore, sizeof(bSecCore));
+
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS
+UpdateLoongArchResetVectorIfNeeded (
+  IN MEMORY_FILE            *FvImage,
+  IN FV_INFO                *FvInfo
+  )
+/*++
+
+Routine Description:
+  This parses the FV looking for SEC and patches that address into the
+  beginning of the FV header.
+
+  For LoongArch ISA, the reset vector is at 0x1c000000.
+
+  We relocate it to SecCoreEntry and copy the ResetVector code to the
+  beginning of the FV.
+
+Arguments:
+  FvImage       Memory file for the FV memory image
+  FvInfo        Information read from INF file.
+
+Returns:
+
+  EFI_SUCCESS             Function Completed successfully.
+  EFI_ABORTED             Error encountered.
+  EFI_INVALID_PARAMETER   A required parameter was NULL.
+  EFI_NOT_FOUND           PEI Core file not found.
+
+--*/
+{
+  EFI_STATUS                  Status;
+  EFI_FILE_SECTION_POINTER    SecPe32;
+  BOOLEAN                     UpdateVectorSec = FALSE;
+  UINT16                      MachineType = 0;
+  EFI_PHYSICAL_ADDRESS        SecCoreEntryAddress = 0;
+
+  //
+  // Verify input parameters
+  //
+  if (FvImage == NULL || FvInfo == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  //
+  // Locate an SEC Core instance and if found extract the machine type and entry point address
+  //
+  Status = FindCorePeSection(FvImage->FileImage, FvInfo->Size, EFI_FV_FILETYPE_SECURITY_CORE, &SecPe32);
+  if (!EFI_ERROR(Status)) {
+
+    Status = GetCoreMachineType(SecPe32, &MachineType);
+    if (EFI_ERROR(Status)) {
+      Error(NULL, 0, 3000, "Invalid", "Could not get the PE32 machine type for SEC Core.");
+      return EFI_ABORTED;
+    }
+
+    Status = GetCoreEntryPointAddress(FvImage->FileImage, FvInfo, SecPe32, &SecCoreEntryAddress);
+    if (EFI_ERROR(Status)) {
+      Error(NULL, 0, 3000, "Invalid", "Could not get the PE32 entry point address for SEC Core.");
+      return EFI_ABORTED;
+    }
+
+    UpdateVectorSec = TRUE;
+  }
+
+  if (!UpdateVectorSec)
     return EFI_SUCCESS;
-  }
-  
-  //
-  // Physical address is FV base + offset of PE32 + offset of the entry point
-  //
-  SecCorePhysicalAddress = FvInfo->BaseAddress;
-  SecCorePhysicalAddress += (UINTN) Pe32Section.Pe32Section + GetSectionHeaderLength(Pe32Section.CommonHeader) - (UINTN) FvImage->FileImage;
-  SecCorePhysicalAddress += EntryPoint;
-  DebugMsg (NULL, 0, 9, "SecCore physical entry point address", "Address = 0x%llX", (unsigned long long) SecCorePhysicalAddress); 
 
-  //
-  // Find the PEI Core. It may not exist if SEC loads DXE core directly
-  //
-  PeiCorePhysicalAddress = 0;
-  Status = GetFileByType (EFI_FV_FILETYPE_PEI_CORE, 1, &PeiCoreFile);
-  if (!EFI_ERROR (Status) && PeiCoreFile != NULL) {
+  if (MachineType == IMAGE_FILE_MACHINE_LOONGARCH64) {
+    UINT32                      ResetVector[1];
+
+    memset(ResetVector, 0, sizeof (ResetVector));
+
+    /* if we found an SEC core entry point then generate a branch instruction */
+    if (UpdateVectorSec) {
+      VerboseMsg("UpdateLoongArchResetVectorIfNeeded updating LOONGARCH64 SEC vector");
+
+      ResetVector[0] = ((SecCoreEntryAddress - FvInfo->BaseAddress) & 0x3FFFFFF) >> 2;
+      ResetVector[0] = ((ResetVector[0] & 0x0FFFF) << 10) | ((ResetVector[0] >> 16) & 0x3FF);
+      ResetVector[0] |= 0x50000000; /* b offset */
+    }
+
     //
-    // PEI Core found, now find PE32 or TE section
+    // Copy to the beginning of the FV
     //
-    Status = GetSectionByType (PeiCoreFile, EFI_SECTION_PE32, 1, &Pe32Section);
-    if (Status == EFI_NOT_FOUND) {
-      Status = GetSectionByType (PeiCoreFile, EFI_SECTION_TE, 1, &Pe32Section);
-    }
-  
-    if (EFI_ERROR (Status)) {
-      Error (NULL, 0, 3000, "Invalid", "could not find either a PE32 or a TE section in PEI core file!");
-      return EFI_ABORTED;
-    }
-  
-    Status = GetPe32Info (
-              (VOID *) ((UINTN) Pe32Section.Pe32Section + GetSectionHeaderLength(Pe32Section.CommonHeader)),
-              &EntryPoint,
-              &BaseOfCode,
-              &MachineType
-              );
-  
-    if (EFI_ERROR (Status)) {
-      Error (NULL, 0, 3000, "Invalid", "could not get the PE32 entry point for the PEI core!");
-      return EFI_ABORTED;
-    }
-    //
-    // Physical address is FV base + offset of PE32 + offset of the entry point
-    //
-    PeiCorePhysicalAddress = FvInfo->BaseAddress;
-    PeiCorePhysicalAddress += (UINTN) Pe32Section.Pe32Section + GetSectionHeaderLength(Pe32Section.CommonHeader) - (UINTN) FvImage->FileImage;
-    PeiCorePhysicalAddress += EntryPoint;
-    DebugMsg (NULL, 0, 9, "PeiCore physical entry point address", "Address = 0x%llX", (unsigned long long) PeiCorePhysicalAddress);
-  }
-  
-  if (MachineType == EFI_IMAGE_MACHINE_ARMT) {
-    // B SecEntryPoint - signed_immed_24 part +/-32MB offset
-    // on ARM, the PC is always 8 ahead, so we're not really jumping from the base address, but from base address + 8
-    ResetVector[0] = (INT32)(SecCorePhysicalAddress - FvInfo->BaseAddress - 8) >> 2;
-
-    if (ResetVector[0] > 0x00FFFFFF) {
-      Error (NULL, 0, 3000, "Invalid", "SEC Entry point must be within 32MB of the start of the FV");
-      return EFI_ABORTED;
-    }
-  
-    // Add opcode for an uncondional branch with no link. AKA B SecEntryPoint
-    ResetVector[0] |= 0xEB000000;
-  
-  
-    // Address of PEI Core, if we have one
-    ResetVector[1] = (UINT32)PeiCorePhysicalAddress;
-  
-    // SWI handler movs   pc,lr. Just in case a debugger uses SWI
-    ResetVector[2] = 0xE1B0F07E;
-  
-    // Place holder to support a common interrupt handler from ROM.
-    // Currently not suppprted. For this to be used the reset vector would not be in this FV
-    // and the exception vectors would be hard coded in the ROM and just through this address
-    // to find a common handler in the a module in the FV.
-    ResetVector[3] = 0;
-  } else if (MachineType == EFI_IMAGE_MACHINE_AARCH64) {
-
-  /* NOTE:
-    ARMT above has an entry in ResetVector[2] for SWI. The way we are using the ResetVector
-    array at the moment, for AArch64, does not allow us space for this as the header only
-    allows for a fixed amount of bytes at the start. If we are sure that UEFI will live
-    within the first 4GB of addressable RAM we could potensioally adopt the same ResetVector
-    layout as above. But for the moment we replace the four 32bit vectors with two 64bit
-    vectors in the same area of the Image heasder. This allows UEFI to start from a 64bit
-    base.
-  */
-
-    ((UINT64*)ResetVector)[0] = (UINT64)(SecCorePhysicalAddress - FvInfo->BaseAddress) >> 2;
-
-    // B SecEntryPoint - signed_immed_26 part +/-128MB offset
-    if ( ((UINT64*)ResetVector)[0] > 0x03FFFFFF) {
-      Error (NULL, 0, 3000, "Invalid", "SEC Entry point must be within 128MB of the start of the FV");
-      return EFI_ABORTED;
-    }
-    // Add opcode for an uncondional branch with no link. AKA B SecEntryPoint
-    ((UINT64*)ResetVector)[0] |= 0x14000000;
-
-    // Address of PEI Core, if we have one
-    ((UINT64*)ResetVector)[1] = (UINT64)PeiCorePhysicalAddress;
-
+    memcpy(FvImage->FileImage, ResetVector, sizeof (ResetVector));
   } else {
-    Error (NULL, 0, 3000, "Invalid", "Unknown ARM machine type");
+    Error(NULL, 0, 3000, "Invalid", "Unknown machine type");
     return EFI_ABORTED;
   }
-
-  //
-  // Copy to the beginning of the FV 
-  //
-  memcpy ((UINT8 *) ((UINTN) FvImage->FileImage), ResetVector, sizeof (ResetVector));
-
-  DebugMsg (NULL, 0, 9, "Update Reset vector in FV Header", NULL);
 
   return EFI_SUCCESS;
 }
@@ -1942,8 +2402,8 @@ GetPe32Info (
 
 Routine Description:
 
-  Retrieves the PE32 entry point offset and machine type from PE image or TeImage.  
-  See EfiImage.h for machine types.  The entry point offset is from the beginning 
+  Retrieves the PE32 entry point offset and machine type from PE image or TeImage.
+  See EfiImage.h for machine types.  The entry point offset is from the beginning
   of the PE32 buffer passed in.
 
 Arguments:
@@ -1985,13 +2445,13 @@ Returns:
     *BaseOfCode   = TeHeader->BaseOfCode + sizeof (EFI_TE_IMAGE_HEADER) - TeHeader->StrippedSize;
     *MachineType  = TeHeader->Machine;
   } else {
-  
+
     //
-    // Then check whether 
+    // Then check whether
     // First is the DOS header
     //
     DosHeader = (EFI_IMAGE_DOS_HEADER *) Pe32;
-  
+
     //
     // Verify DOS header is expected
     //
@@ -2003,7 +2463,7 @@ Returns:
     // Immediately following is the NT header.
     //
     ImgHdr = (EFI_IMAGE_OPTIONAL_HEADER_UNION *) ((UINTN) Pe32 + DosHeader->e_lfanew);
-  
+
     //
     // Verify NT header is expected
     //
@@ -2022,8 +2482,9 @@ Returns:
   //
   // Verify machine type is supported
   //
-  if ((*MachineType != EFI_IMAGE_MACHINE_IA32) && (*MachineType != EFI_IMAGE_MACHINE_IA64) && (*MachineType != EFI_IMAGE_MACHINE_X64) && (*MachineType != EFI_IMAGE_MACHINE_EBC) && 
-      (*MachineType != EFI_IMAGE_MACHINE_ARMT) && (*MachineType != EFI_IMAGE_MACHINE_AARCH64)) {
+  if ((*MachineType != IMAGE_FILE_MACHINE_I386) &&  (*MachineType != IMAGE_FILE_MACHINE_X64) && (*MachineType != IMAGE_FILE_MACHINE_EBC) &&
+      (*MachineType != IMAGE_FILE_MACHINE_ARMTHUMB_MIXED) && (*MachineType != IMAGE_FILE_MACHINE_ARM64) &&
+      (*MachineType != IMAGE_FILE_MACHINE_RISCV64) && (*MachineType != IMAGE_FILE_MACHINE_LOONGARCH64)) {
     Error (NULL, 0, 3000, "Invalid", "Unrecognized machine type in the PE32 file.");
     return EFI_UNSUPPORTED;
   }
@@ -2070,17 +2531,19 @@ Returns:
   UINT8                           *FvImage;
   UINTN                           FvImageSize;
   FILE                            *FvFile;
-  CHAR8                           FvMapName [MAX_LONG_FILE_PATH];
+  CHAR8                           *FvMapName;
   FILE                            *FvMapFile;
   EFI_FIRMWARE_VOLUME_EXT_HEADER  *FvExtHeader;
   FILE                            *FvExtHeaderFile;
   UINTN                           FileSize;
-  CHAR8                           FvReportName[MAX_LONG_FILE_PATH];
+  CHAR8                           *FvReportName;
   FILE                            *FvReportFile;
 
   FvBufferHeader = NULL;
   FvFile         = NULL;
+  FvMapName      = NULL;
   FvMapFile      = NULL;
+  FvReportName   = NULL;
   FvReportFile   = NULL;
 
   if (InfFileImage != NULL) {
@@ -2090,7 +2553,7 @@ Returns:
     InfMemoryFile.FileImage           = InfFileImage;
     InfMemoryFile.CurrentFilePointer  = InfFileImage;
     InfMemoryFile.Eof                 = InfFileImage + InfFileSize;
-  
+
     //
     // Parse the FV inf file for header information
     //
@@ -2112,17 +2575,17 @@ Returns:
     Error (NULL, 0, 1001, "Missing option", "Output file name");
     return EFI_ABORTED;
   }
-  
+
   if (mFvDataInfo.FvBlocks[0].Length == 0) {
     Error (NULL, 0, 1001, "Missing required argument", "Block Size");
     return EFI_ABORTED;
   }
-  
+
   //
   // Debug message Fv File System Guid
   //
   if (mFvDataInfo.FvFileSystemGuidSet) {
-    DebugMsg (NULL, 0, 9, "FV File System Guid", "%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X", 
+    DebugMsg (NULL, 0, 9, "FV File System Guid", "%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X",
                   (unsigned) mFvDataInfo.FvFileSystemGuid.Data1,
                   mFvDataInfo.FvFileSystemGuid.Data2,
                   mFvDataInfo.FvFileSystemGuid.Data3,
@@ -2146,6 +2609,10 @@ Returns:
     // Open the FV Extension Header file
     //
     FvExtHeaderFile = fopen (LongFilePath (mFvDataInfo.FvExtHeaderFile), "rb");
+    if (FvExtHeaderFile == NULL) {
+      Error (NULL, 0, 0001, "Error opening file", mFvDataInfo.FvExtHeaderFile);
+      return EFI_ABORTED;
+    }
 
     //
     // Get the file size
@@ -2191,7 +2658,7 @@ Returns:
   // Debug message Fv Name Guid
   //
   if (mFvDataInfo.FvNameGuidSet) {
-      DebugMsg (NULL, 0, 9, "FV Name Guid", "%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X", 
+      DebugMsg (NULL, 0, 9, "FV Name Guid", "%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X",
                   (unsigned) mFvDataInfo.FvNameGuid.Data1,
                   mFvDataInfo.FvNameGuid.Data2,
                   mFvDataInfo.FvNameGuid.Data3,
@@ -2214,8 +2681,34 @@ Returns:
   // FvMap file to log the function address of all modules in one Fvimage
   //
   if (MapFileName != NULL) {
+    if (strlen (MapFileName) > MAX_LONG_FILE_PATH - 1) {
+      Error (NULL, 0, 1003, "Invalid option value", "MapFileName %s is too long!", MapFileName);
+      Status = EFI_ABORTED;
+      goto Finish;
+    }
+
+    FvMapName = malloc (strlen (MapFileName) + 1);
+    if (FvMapName == NULL) {
+      Error (NULL, 0, 4001, "Resource", "memory cannot be allocated!");
+      Status = EFI_OUT_OF_RESOURCES;
+      goto Finish;
+    }
+
     strcpy (FvMapName, MapFileName);
   } else {
+    if (strlen (FvFileName) + strlen (".map") > MAX_LONG_FILE_PATH - 1) {
+      Error (NULL, 0, 1003, "Invalid option value", "FvFileName %s is too long!", FvFileName);
+      Status = EFI_ABORTED;
+      goto Finish;
+    }
+
+    FvMapName = malloc (strlen (FvFileName) + strlen (".map") + 1);
+    if (FvMapName == NULL) {
+      Error (NULL, 0, 4001, "Resource", "memory cannot be allocated!");
+      Status = EFI_OUT_OF_RESOURCES;
+      goto Finish;
+    }
+
     strcpy (FvMapName, FvFileName);
     strcat (FvMapName, ".map");
   }
@@ -2224,6 +2717,19 @@ Returns:
   //
   // FvReport file to log the FV information in one Fvimage
   //
+  if (strlen (FvFileName) + strlen (".txt") > MAX_LONG_FILE_PATH - 1) {
+    Error (NULL, 0, 1003, "Invalid option value", "FvFileName %s is too long!", FvFileName);
+    Status = EFI_ABORTED;
+    goto Finish;
+  }
+
+  FvReportName = malloc (strlen (FvFileName) + strlen (".txt") + 1);
+  if (FvReportName == NULL) {
+    Error (NULL, 0, 4001, "Resource", "memory cannot be allocated!");
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Finish;
+  }
+
   strcpy (FvReportName, FvFileName);
   strcat (FvReportName, ".txt");
 
@@ -2233,10 +2739,10 @@ Returns:
   //
   Status = CalculateFvSize (&mFvDataInfo);
   if (EFI_ERROR (Status)) {
-    return Status;    
+    goto Finish;
   }
   VerboseMsg ("the generated FV image size is %u bytes", (unsigned) mFvDataInfo.Size);
-  
+
   //
   // support fv image and empty fv image
   //
@@ -2247,7 +2753,8 @@ Returns:
   //
   FvBufferHeader = malloc (FvImageSize + sizeof (UINT64));
   if (FvBufferHeader == NULL) {
-    return EFI_OUT_OF_RESOURCES;
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Finish;
   }
   FvImage = (UINT8 *) (((UINTN) FvBufferHeader + 7) & ~7);
 
@@ -2256,7 +2763,7 @@ Returns:
   //
   if (mFvDataInfo.FvAttributes == 0) {
     //
-    // Set Default Fv Attribute 
+    // Set Default Fv Attribute
     //
     mFvDataInfo.FvAttributes = FV_DEFAULT_ATTRIBUTE;
   }
@@ -2287,7 +2794,7 @@ Returns:
   FvHeader->Revision        = EFI_FVH_REVISION;
   FvHeader->ExtHeaderOffset = 0;
   FvHeader->Reserved[0]     = 0;
-  
+
   //
   // Copy firmware block map
   //
@@ -2339,16 +2846,18 @@ Returns:
   FvMapFile = fopen (LongFilePath (FvMapName), "w");
   if (FvMapFile == NULL) {
     Error (NULL, 0, 0001, "Error opening file", FvMapName);
-    return EFI_ABORTED;
+    Status = EFI_ABORTED;
+    goto Finish;
   }
-  
+
   //
   // Open FvReport file
   //
   FvReportFile = fopen (LongFilePath (FvReportName), "w");
   if (FvReportFile == NULL) {
     Error (NULL, 0, 0001, "Error opening file", FvReportName);
-    return EFI_ABORTED;
+    Status = EFI_ABORTED;
+    goto Finish;
   }
   //
   // record FV size information into FvMap file.
@@ -2418,39 +2927,71 @@ Returns:
       Error (NULL, 0, 4002, "Resource", "FV space is full, cannot add pad file between the last file and the VTF file.");
       goto Finish;
     }
-    if (!mArm) {
+
+    if (!mArm && !mRiscV && !mLoongArch) {
       //
       // Update reset vector (SALE_ENTRY for IPF)
-      // Now for IA32 and IA64 platform, the fv which has bsf file must have the 
-      // EndAddress of 0xFFFFFFFF. Thus, only this type fv needs to update the   
-      // reset vector. If the PEI Core is found, the VTF file will probably get  
-      // corrupted by updating the entry point.                                  
+      // Now for IA32 and IA64 platform, the fv which has bsf file must have the
+      // EndAddress of 0xFFFFFFFF (unless the section was rebased).
+      // Thus, only this type fv needs to update the  reset vector.
+      // If the PEI Core is found, the VTF file will probably get
+      // corrupted by updating the entry point.
       //
-      if ((mFvDataInfo.BaseAddress + mFvDataInfo.Size) == FV_IMAGES_TOP_ADDRESS) {       
+      if (mFvDataInfo.ForceRebase == 1 ||
+          (mFvDataInfo.BaseAddress + mFvDataInfo.Size) == FV_IMAGES_TOP_ADDRESS) {
         Status = UpdateResetVector (&FvImageMemoryFile, &mFvDataInfo, VtfFileImage);
-        if (EFI_ERROR(Status)) {                                               
+        if (EFI_ERROR(Status)) {
           Error (NULL, 0, 3000, "Invalid", "Could not update the reset vector.");
-          goto Finish;                                              
+          goto Finish;
         }
         DebugMsg (NULL, 0, 9, "Update Reset vector in VTF file", NULL);
       }
     }
-  } 
+  }
 
   if (mArm) {
     Status = UpdateArmResetVectorIfNeeded (&FvImageMemoryFile, &mFvDataInfo);
-    if (EFI_ERROR (Status)) {                                               
+    if (EFI_ERROR (Status)) {
       Error (NULL, 0, 3000, "Invalid", "Could not update the reset vector.");
-      goto Finish;                                              
-    }  
-    
+      goto Finish;
+    }
+
     //
     // Update Checksum for FvHeader
     //
     FvHeader->Checksum = 0;
     FvHeader->Checksum = CalculateChecksum16 ((UINT16 *) FvHeader, FvHeader->HeaderLength / sizeof (UINT16));
   }
-  
+
+  if (mRiscV) {
+     //
+     // Update RISCV reset vector.
+     //
+     Status = UpdateRiscvResetVectorIfNeeded (&FvImageMemoryFile, &mFvDataInfo);
+     if (EFI_ERROR (Status)) {
+       Error (NULL, 0, 3000, "Invalid", "Could not update the reset vector for RISC-V.");
+       goto Finish;
+    }
+    //
+    // Update Checksum for FvHeader
+    //
+    FvHeader->Checksum = 0;
+    FvHeader->Checksum = CalculateChecksum16 ((UINT16 *) FvHeader, FvHeader->HeaderLength / sizeof (UINT16));
+  }
+
+  if (mLoongArch) {
+    Status = UpdateLoongArchResetVectorIfNeeded (&FvImageMemoryFile, &mFvDataInfo);
+    if (EFI_ERROR (Status)) {
+      Error (NULL, 0, 3000, "Invalid", "Could not update the reset vector.");
+      goto Finish;
+    }
+    //
+    // Update Checksum for FvHeader
+    //
+    FvHeader->Checksum = 0;
+    FvHeader->Checksum = CalculateChecksum16 ((UINT16 *) FvHeader, FvHeader->HeaderLength / sizeof (UINT16));
+  }
+
   //
   // Update FV Alignment attribute to the largest alignment of all the FFS files in the FV
   //
@@ -2473,7 +3014,7 @@ Returns:
     FvHeader->Checksum      = CalculateChecksum16 ((UINT16 *) FvHeader, FvHeader->HeaderLength / sizeof (UINT16));
   }
 
-WriteFile: 
+WriteFile:
   //
   // Write fv file
   //
@@ -2498,12 +3039,20 @@ Finish:
   if (FvExtHeader != NULL) {
     free (FvExtHeader);
   }
-  
+
+  if (FvMapName != NULL) {
+    free (FvMapName);
+  }
+
+  if (FvReportName != NULL) {
+    free (FvReportName);
+  }
+
   if (FvFile != NULL) {
     fflush (FvFile);
     fclose (FvFile);
   }
-  
+
   if (FvMapFile != NULL) {
     fflush (FvMapFile);
     fclose (FvMapFile);
@@ -2604,6 +3153,7 @@ Returns:
 --*/
 {
   UINTN               CurrentOffset;
+  UINTN               OrigOffset;
   UINTN               Index;
   FILE                *fpin;
   UINTN               FfsFileSize;
@@ -2611,12 +3161,12 @@ Returns:
   UINT32              FfsAlignment;
   UINT32              FfsHeaderSize;
   EFI_FFS_FILE_HEADER FfsHeader;
-  BOOLEAN             VtfFileFlag;
   UINTN               VtfFileSize;
-  
+  UINTN               MaxPadFileSize;
+
   FvExtendHeaderSize = 0;
+  MaxPadFileSize = 0;
   VtfFileSize = 0;
-  VtfFileFlag = FALSE;
   fpin  = NULL;
   Index = 0;
 
@@ -2627,19 +3177,19 @@ Returns:
   for (Index = 0; FvInfoPtr->FvBlocks[Index].NumBlocks > 0 && FvInfoPtr->FvBlocks[Index].Length > 0; Index++) {
     FvInfoPtr->Size += FvInfoPtr->FvBlocks[Index].NumBlocks * FvInfoPtr->FvBlocks[Index].Length;
   }
-  
+
   //
-  // Caculate the required sizes for all FFS files.
+  // Calculate the required sizes for all FFS files.
   //
   CurrentOffset = sizeof (EFI_FIRMWARE_VOLUME_HEADER);
-  
+
   for (Index = 1;; Index ++) {
     CurrentOffset += sizeof (EFI_FV_BLOCK_MAP_ENTRY);
     if (FvInfoPtr->FvBlocks[Index].NumBlocks == 0 || FvInfoPtr->FvBlocks[Index].Length == 0) {
       break;
     }
   }
-  
+
   //
   // Calculate PI extension header
   //
@@ -2664,7 +3214,7 @@ Returns:
   }
 
   //
-  // Accumlate every FFS file size.
+  // Accumulate every FFS file size.
   //
   for (Index = 0; FvInfoPtr->FvFiles[Index][0] != 0; Index++) {
     //
@@ -2694,25 +3244,26 @@ Returns:
     // close file
     //
     fclose (fpin);
-    
+
     if (FvInfoPtr->IsPiFvImage) {
-	    //
-	    // Check whether this ffs file is vtf file
-	    //
-	    if (IsVtfFile (&FfsHeader)) {
-	      if (VtfFileFlag) {
-	        //
-	        // One Fv image can't have two vtf files.
-	        //
-	        return EFI_ABORTED;
-	      }
-	      VtfFileFlag = TRUE;
+        //
+        // Check whether this ffs file is vtf file
+        //
+        if (IsVtfFile (&FfsHeader)) {
+          if (VtfFileFlag) {
+            //
+            // One Fv image can't have two vtf files.
+            //
+            Error (NULL, 0, 3000,"Invalid", "One Fv image can't have two vtf files.");
+            return EFI_ABORTED;
+          }
+          VtfFileFlag = TRUE;
         VtfFileSize = FfsFileSize;
         continue;
       }
 
       //
-      // Get the alignment of FFS file 
+      // Get the alignment of FFS file
       //
       ReadFfsAlignment (&FfsHeader, &FfsAlignment);
       FfsAlignment = 1 << FfsAlignment;
@@ -2723,31 +3274,35 @@ Returns:
         //
         // Only EFI_FFS_FILE_HEADER is needed for a pad section.
         //
+        OrigOffset    = CurrentOffset;
         CurrentOffset = (CurrentOffset + FfsHeaderSize + sizeof(EFI_FFS_FILE_HEADER) + FfsAlignment - 1) & ~(FfsAlignment - 1);
         CurrentOffset -= FfsHeaderSize;
+        if ((CurrentOffset - OrigOffset) > MaxPadFileSize) {
+          MaxPadFileSize = CurrentOffset - OrigOffset;
+        }
       }
-	  }
+    }
 
     //
     // Add ffs file size
     //
     if (FvInfoPtr->SizeofFvFiles[Index] > FfsFileSize) {
-    	CurrentOffset += FvInfoPtr->SizeofFvFiles[Index];
+      CurrentOffset += FvInfoPtr->SizeofFvFiles[Index];
     } else {
-    	CurrentOffset += FfsFileSize;
+      CurrentOffset += FfsFileSize;
     }
-    	
+
     //
-    // Make next ffs file start at QWord Boundry
+    // Make next ffs file start at QWord Boundary
     //
     if (FvInfoPtr->IsPiFvImage) {
-    	CurrentOffset = (CurrentOffset + EFI_FFS_FILE_HEADER_ALIGNMENT - 1) & ~(EFI_FFS_FILE_HEADER_ALIGNMENT - 1);
+      CurrentOffset = (CurrentOffset + EFI_FFS_FILE_HEADER_ALIGNMENT - 1) & ~(EFI_FFS_FILE_HEADER_ALIGNMENT - 1);
     }
   }
   CurrentOffset += VtfFileSize;
-  DebugMsg (NULL, 0, 9, "FvImage size", "The caculated fv image size is 0x%x and the current set fv image size is 0x%x", (unsigned) CurrentOffset, (unsigned) FvInfoPtr->Size);
-  
-  if (FvInfoPtr->Size == 0) { 
+  DebugMsg (NULL, 0, 9, "FvImage size", "The calculated fv image size is 0x%x and the current set fv image size is 0x%x", (unsigned) CurrentOffset, (unsigned) FvInfoPtr->Size);
+
+  if (FvInfoPtr->Size == 0) {
     //
     // Update FvInfo data
     //
@@ -2762,12 +3317,18 @@ Returns:
     Error (NULL, 0, 3000, "Invalid", "the required fv image size 0x%x exceeds the set fv image size 0x%x", (unsigned) CurrentOffset, (unsigned) FvInfoPtr->Size);
     return EFI_INVALID_PARAMETER;
   }
-  
+
   //
   // Set Fv Size Information
   //
   mFvTotalSize = FvInfoPtr->Size;
   mFvTakenSize = CurrentOffset;
+  if ((mFvTakenSize == mFvTotalSize) && (MaxPadFileSize > 0)) {
+    //
+    // This FV means TOP FFS has been taken. Then, check whether there is padding data for use.
+    //
+    mFvTakenSize = mFvTakenSize - MaxPadFileSize;
+  }
 
   return EFI_SUCCESS;
 }
@@ -2817,7 +3378,7 @@ Returns:
 
 EFI_STATUS
 GetChildFvFromFfs (
-  IN      FV_INFO               *FvInfo, 
+  IN      FV_INFO               *FvInfo,
   IN      EFI_FFS_FILE_HEADER   *FfsFile,
   IN      UINTN                 XipOffset
   )
@@ -2829,7 +3390,7 @@ Routine Description:
   their base address to the parent image.
 
 Arguments:
-  FvInfo            A pointer to FV_INFO struture.
+  FvInfo            A pointer to FV_INFO structure.
   FfsFile           A pointer to Ffs file image that may contain FvImage.
   XipOffset         The offset address to the parent FvImage base.
 
@@ -2843,16 +3404,48 @@ Returns:
   EFI_FILE_SECTION_POINTER            SubFvSection;
   EFI_FIRMWARE_VOLUME_HEADER          *SubFvImageHeader;
   EFI_PHYSICAL_ADDRESS                SubFvBaseAddress;
+  EFI_FILE_SECTION_POINTER            CorePe32;
+  UINT16                              MachineType;
 
   for (Index = 1;; Index++) {
     //
-    // Find FV section 
+    // Find FV section
     //
     Status = GetSectionByType (FfsFile, EFI_SECTION_FIRMWARE_VOLUME_IMAGE, Index, &SubFvSection);
     if (EFI_ERROR (Status)) {
       break;
     }
     SubFvImageHeader = (EFI_FIRMWARE_VOLUME_HEADER *) ((UINT8 *) SubFvSection.FVImageSection + GetSectionHeaderLength(SubFvSection.FVImageSection));
+
+    //
+    // See if there's an SEC core in the child FV
+    Status = FindCorePeSection(SubFvImageHeader, SubFvImageHeader->FvLength, EFI_FV_FILETYPE_SECURITY_CORE, &CorePe32);
+
+    // if we couldn't find the SEC core, look for a PEI core
+    if (EFI_ERROR(Status)) {
+      Status = FindCorePeSection(SubFvImageHeader, SubFvImageHeader->FvLength, EFI_FV_FILETYPE_PEI_CORE, &CorePe32);
+    }
+
+    if (!EFI_ERROR(Status)) {
+      Status = GetCoreMachineType(CorePe32, &MachineType);
+      if (EFI_ERROR(Status)) {
+        Error(NULL, 0, 3000, "Invalid", "Could not get the PE32 machine type for SEC/PEI Core.");
+        return EFI_ABORTED;
+      }
+
+      // machine type is ARM, set a flag so ARM reset vector processing occurs
+      if ((MachineType == IMAGE_FILE_MACHINE_ARMTHUMB_MIXED) || (MachineType == IMAGE_FILE_MACHINE_ARM64)) {
+        VerboseMsg("Located ARM/AArch64 SEC/PEI core in child FV");
+        mArm = TRUE;
+      }
+
+      // Machine type is LOONGARCH64, set a flag so LoongArch64 reset vector processed.
+      if (MachineType == IMAGE_FILE_MACHINE_LOONGARCH64) {
+        VerboseMsg("Located LoongArch64 SEC core in child FV");
+        mLoongArch = TRUE;
+      }
+    }
+
     //
     // Rebase on Flash
     //
@@ -2864,9 +3457,9 @@ Returns:
 }
 
 EFI_STATUS
-FfsRebase ( 
-  IN OUT  FV_INFO               *FvInfo, 
-  IN      CHAR8                 *FileName,           
+FfsRebase (
+  IN OUT  FV_INFO               *FvInfo,
+  IN      CHAR8                 *FileName,
   IN OUT  EFI_FFS_FILE_HEADER   *FfsFile,
   IN      UINTN                 XipOffset,
   IN      FILE                  *FvMapFile
@@ -2879,8 +3472,8 @@ Routine Description:
   rebase any PE32 sections found in the file using the base address.
 
 Arguments:
-  
-  FvInfo            A pointer to FV_INFO struture.
+
+  FvInfo            A pointer to FV_INFO structure.
   FileName          Ffs File PathName
   FfsFile           A pointer to Ffs file image.
   XipOffset         The offset address to use for rebasing the XIP file image.
@@ -2898,7 +3491,7 @@ Returns:
 {
   EFI_STATUS                            Status;
   PE_COFF_LOADER_IMAGE_CONTEXT          ImageContext;
-  PE_COFF_LOADER_IMAGE_CONTEXT          OrigImageContext;  
+  PE_COFF_LOADER_IMAGE_CONTEXT          OrigImageContext;
   EFI_PHYSICAL_ADDRESS                  XipBase;
   EFI_PHYSICAL_ADDRESS                  NewPe32BaseAddress;
   UINTN                                 Index;
@@ -2917,7 +3510,7 @@ Returns:
   UINT32                                FfsHeaderSize;
   UINT32                                CurSecHdrSize;
 
-  Index              = 0;  
+  Index              = 0;
   MemoryImagePointer = NULL;
   TEImageHeader      = NULL;
   ImgHdr             = NULL;
@@ -2932,7 +3525,7 @@ Returns:
   if ((FvInfo->BaseAddress == 0) && (FvInfo->ForceRebase == -1)) {
     return EFI_SUCCESS;
   }
-  
+
   //
   // If ForceRebase Flag specified to FALSE, will always not take rebase action.
   //
@@ -2978,7 +3571,7 @@ Returns:
     // Init Value
     //
     NewPe32BaseAddress = 0;
-    
+
     //
     // Find Pe Image
     //
@@ -3000,16 +3593,24 @@ Returns:
       return Status;
     }
 
-    if ( (ImageContext.Machine == EFI_IMAGE_MACHINE_ARMT) ||
-         (ImageContext.Machine == EFI_IMAGE_MACHINE_AARCH64) ) {
+    if ( (ImageContext.Machine == IMAGE_FILE_MACHINE_ARMTHUMB_MIXED) ||
+         (ImageContext.Machine == IMAGE_FILE_MACHINE_ARM64) ) {
       mArm = TRUE;
+    }
+
+    if (ImageContext.Machine == IMAGE_FILE_MACHINE_RISCV64) {
+      mRiscV = TRUE;
+    }
+
+    if (ImageContext.Machine == IMAGE_FILE_MACHINE_LOONGARCH64) {
+      mLoongArch = TRUE;
     }
 
     //
     // Keep Image Context for PE image in FV
     //
     memcpy (&OrigImageContext, &ImageContext, sizeof (ImageContext));
-    
+
     //
     // Get File PdbPointer
     //
@@ -3035,17 +3636,22 @@ Returns:
           //
           // Xip module has the same section alignment and file alignment.
           //
-          Error (NULL, 0, 3000, "Invalid", "Section-Alignment and File-Alignment do not match : %s.", FileName);
+          Error (NULL, 0, 3000, "Invalid", "PE image Section-Alignment and File-Alignment do not match : %s.", FileName);
           return EFI_ABORTED;
         }
         //
-        // PeImage has no reloc section. It will try to get reloc data from the original EFI image. 
+        // PeImage has no reloc section. It will try to get reloc data from the original EFI image.
         //
         if (ImageContext.RelocationsStripped) {
           //
-          // Construct the original efi file Name 
+          // Construct the original efi file Name
           //
-          strcpy (PeFileName, FileName);
+          if (strlen (FileName) >= MAX_LONG_FILE_PATH) {
+            Error (NULL, 0, 2000, "Invalid", "The file name %s is too long.", FileName);
+            return EFI_ABORTED;
+          }
+          strncpy (PeFileName, FileName, MAX_LONG_FILE_PATH - 1);
+          PeFileName[MAX_LONG_FILE_PATH - 1] = 0;
           Cptr = PeFileName + strlen (PeFileName);
           while (*Cptr != '.') {
             Cptr --;
@@ -3072,6 +3678,7 @@ Returns:
           PeFileSize = _filelength (fileno (PeFile));
           PeFileBuffer = (UINT8 *) malloc (PeFileSize);
           if (PeFileBuffer == NULL) {
+            fclose (PeFile);
             Error (NULL, 0, 4001, "Resource", "memory cannot be allocated on rebase of %s", FileName);
             return EFI_OUT_OF_RESOURCES;
           }
@@ -3107,7 +3714,7 @@ Returns:
           //
           // Xip module has the same section alignment and file alignment.
           //
-          Error (NULL, 0, 3000, "Invalid", "Section-Alignment and File-Alignment do not match : %s.", FileName);
+          Error (NULL, 0, 3000, "Invalid", "PE image Section-Alignment and File-Alignment do not match : %s.", FileName);
           return EFI_ABORTED;
         }
         NewPe32BaseAddress = XipBase + (UINTN) CurrentPe32Section.Pe32Section + CurSecHdrSize - (UINTN)FfsFile;
@@ -3119,7 +3726,7 @@ Returns:
         //
         return EFI_SUCCESS;
     }
-    
+
     //
     // Relocation doesn't exist
     //
@@ -3141,18 +3748,18 @@ Returns:
     }
     memset ((VOID *) MemoryImagePointer, 0, (UINTN) ImageContext.ImageSize + ImageContext.SectionAlignment);
     ImageContext.ImageAddress = ((UINTN) MemoryImagePointer + ImageContext.SectionAlignment - 1) & (~((UINTN) ImageContext.SectionAlignment - 1));
-    
+
     Status =  PeCoffLoaderLoadImage (&ImageContext);
     if (EFI_ERROR (Status)) {
       Error (NULL, 0, 3000, "Invalid", "LocateImage() call failed on rebase of %s", FileName);
       free ((VOID *) MemoryImagePointer);
       return Status;
     }
-         
+
     ImageContext.DestinationAddress = NewPe32BaseAddress;
     Status                          = PeCoffLoaderRelocateImage (&ImageContext);
     if (EFI_ERROR (Status)) {
-      Error (NULL, 0, 3000, "Invalid", "RelocateImage() call failed on rebase of %s", FileName);
+      Error (NULL, 0, 3000, "Invalid", "RelocateImage() call failed on rebase of %s Status=%d", FileName, Status);
       free ((VOID *) MemoryImagePointer);
       return Status;
     }
@@ -3162,15 +3769,15 @@ Returns:
     //
     SectionHeader = (EFI_IMAGE_SECTION_HEADER *) (
                        (UINTN) ImgHdr +
-                       sizeof (UINT32) + 
-                       sizeof (EFI_IMAGE_FILE_HEADER) +  
+                       sizeof (UINT32) +
+                       sizeof (EFI_IMAGE_FILE_HEADER) +
                        ImgHdr->Pe32.FileHeader.SizeOfOptionalHeader
                        );
-    
+
     for (Index = 0; Index < ImgHdr->Pe32.FileHeader.NumberOfSections; Index ++, SectionHeader ++) {
       CopyMem (
-        (UINT8 *) CurrentPe32Section.Pe32Section + CurSecHdrSize + SectionHeader->PointerToRawData, 
-        (VOID*) (UINTN) (ImageContext.ImageAddress + SectionHeader->VirtualAddress), 
+        (UINT8 *) CurrentPe32Section.Pe32Section + CurSecHdrSize + SectionHeader->PointerToRawData,
+        (VOID*) (UINTN) (ImageContext.ImageAddress + SectionHeader->VirtualAddress),
         SectionHeader->SizeOfRawData
         );
     }
@@ -3181,7 +3788,7 @@ Returns:
       free (PeFileBuffer);
       PeFileBuffer = NULL;
     }
-    
+
     //
     // Update Image Base Address
     //
@@ -3236,13 +3843,13 @@ Returns:
     //
     return EFI_SUCCESS;
   }
-  
+
   //
   // Now process TE sections
   //
   for (Index = 1;; Index++) {
     NewPe32BaseAddress = 0;
-    
+
     //
     // Find Te Image
     //
@@ -3252,7 +3859,7 @@ Returns:
     }
 
     CurSecHdrSize = GetSectionHeaderLength(CurrentPe32Section.CommonHeader);
-    
+
     //
     // Calculate the TE base address, the FFS file base plus the offset of the TE section less the size stripped off
     // by GenTEImage
@@ -3271,9 +3878,13 @@ Returns:
       return Status;
     }
 
-    if ( (ImageContext.Machine == EFI_IMAGE_MACHINE_ARMT) ||
-         (ImageContext.Machine == EFI_IMAGE_MACHINE_AARCH64) ) {
+    if ( (ImageContext.Machine == IMAGE_FILE_MACHINE_ARMTHUMB_MIXED) ||
+         (ImageContext.Machine == IMAGE_FILE_MACHINE_ARM64) ) {
       mArm = TRUE;
+    }
+
+    if (ImageContext.Machine == IMAGE_FILE_MACHINE_LOONGARCH64) {
+      mLoongArch = TRUE;
     }
 
     //
@@ -3297,9 +3908,14 @@ Returns:
     //
     if (ImageContext.RelocationsStripped) {
       //
-      // Construct the original efi file name 
+      // Construct the original efi file name
       //
-      strcpy (PeFileName, FileName);
+      if (strlen (FileName) >= MAX_LONG_FILE_PATH) {
+        Error (NULL, 0, 2000, "Invalid", "The file name %s is too long.", FileName);
+        return EFI_ABORTED;
+      }
+      strncpy (PeFileName, FileName, MAX_LONG_FILE_PATH - 1);
+      PeFileName[MAX_LONG_FILE_PATH - 1] = 0;
       Cptr = PeFileName + strlen (PeFileName);
       while (*Cptr != '.') {
         Cptr --;
@@ -3327,6 +3943,7 @@ Returns:
         PeFileSize = _filelength (fileno (PeFile));
         PeFileBuffer = (UINT8 *) malloc (PeFileSize);
         if (PeFileBuffer == NULL) {
+          fclose (PeFile);
           Error (NULL, 0, 4001, "Resource", "memory cannot be allocated on rebase of %s", FileName);
           return EFI_OUT_OF_RESOURCES;
         }
@@ -3380,7 +3997,7 @@ Returns:
     }
     //
     // Reloacate TeImage
-    // 
+    //
     ImageContext.DestinationAddress = NewPe32BaseAddress;
     Status                          = PeCoffLoaderRelocateImage (&ImageContext);
     if (EFI_ERROR (Status)) {
@@ -3388,7 +4005,7 @@ Returns:
       free ((VOID *) MemoryImagePointer);
       return Status;
     }
-    
+
     //
     // Copy the relocated image into raw image file.
     //
@@ -3396,19 +4013,19 @@ Returns:
     for (Index = 0; Index < TEImageHeader->NumberOfSections; Index ++, SectionHeader ++) {
       if (!ImageContext.IsTeImage) {
         CopyMem (
-          (UINT8 *) TEImageHeader + sizeof (EFI_TE_IMAGE_HEADER) - TEImageHeader->StrippedSize + SectionHeader->PointerToRawData, 
-          (VOID*) (UINTN) (ImageContext.ImageAddress + SectionHeader->VirtualAddress), 
+          (UINT8 *) TEImageHeader + sizeof (EFI_TE_IMAGE_HEADER) - TEImageHeader->StrippedSize + SectionHeader->PointerToRawData,
+          (VOID*) (UINTN) (ImageContext.ImageAddress + SectionHeader->VirtualAddress),
           SectionHeader->SizeOfRawData
           );
       } else {
         CopyMem (
-          (UINT8 *) TEImageHeader + sizeof (EFI_TE_IMAGE_HEADER) - TEImageHeader->StrippedSize + SectionHeader->PointerToRawData, 
-          (VOID*) (UINTN) (ImageContext.ImageAddress + sizeof (EFI_TE_IMAGE_HEADER) - TEImageHeader->StrippedSize + SectionHeader->VirtualAddress), 
+          (UINT8 *) TEImageHeader + sizeof (EFI_TE_IMAGE_HEADER) - TEImageHeader->StrippedSize + SectionHeader->PointerToRawData,
+          (VOID*) (UINTN) (ImageContext.ImageAddress + sizeof (EFI_TE_IMAGE_HEADER) - TEImageHeader->StrippedSize + SectionHeader->VirtualAddress),
           SectionHeader->SizeOfRawData
           );
       }
     }
-    
+
     //
     // Free the allocated memory resource
     //
@@ -3418,7 +4035,7 @@ Returns:
       free (PeFileBuffer);
       PeFileBuffer = NULL;
     }
-    
+
     //
     // Update Image Base Address
     //
@@ -3449,92 +4066,15 @@ Returns:
     }
 
     WriteMapFile (
-      FvMapFile, 
-      PdbPointer, 
+      FvMapFile,
+      PdbPointer,
       FfsFile,
-      NewPe32BaseAddress, 
+      NewPe32BaseAddress,
       &OrigImageContext
       );
   }
- 
+
   return EFI_SUCCESS;
-}
-
-EFI_STATUS
-FindApResetVectorPosition (
-  IN  MEMORY_FILE  *FvImage,
-  OUT UINT8        **Pointer
-  )
-/*++
-
-Routine Description:
-
-  Find the position in this FvImage to place Ap reset vector.
-
-Arguments:
-
-  FvImage       Memory file for the FV memory image.
-  Pointer       Pointer to pointer to position.
-
-Returns:
-
-  EFI_NOT_FOUND   - No satisfied position is found.
-  EFI_SUCCESS     - The suitable position is return.
-
---*/
-{
-  EFI_FFS_FILE_HEADER   *PadFile;
-  UINT32                Index;
-  EFI_STATUS            Status;
-  UINT8                 *FixPoint;
-  UINT32                FileLength;
-
-  for (Index = 1; ;Index ++) {
-    //
-    // Find Pad File to add ApResetVector info
-    //
-    Status = GetFileByType (EFI_FV_FILETYPE_FFS_PAD, Index, &PadFile);
-    if (EFI_ERROR (Status) || (PadFile == NULL)) {
-      //
-      // No Pad file to be found.
-      //
-      break;
-    }
-    //
-    // Get Pad file size.
-    //
-    FileLength = GetFfsFileLength(PadFile);
-    FileLength = (FileLength + EFI_FFS_FILE_HEADER_ALIGNMENT - 1) & ~(EFI_FFS_FILE_HEADER_ALIGNMENT - 1); 
-    //
-    // FixPoint must be align on 0x1000 relative to FvImage Header
-    //
-    FixPoint = (UINT8*) PadFile + GetFfsHeaderLength(PadFile);
-    FixPoint = FixPoint + 0x1000 - (((UINTN) FixPoint - (UINTN) FvImage->FileImage) & 0xFFF);
-    //
-    // FixPoint be larger at the last place of one fv image.
-    //
-    while (((UINTN) FixPoint + SIZEOF_STARTUP_DATA_ARRAY - (UINTN) PadFile) <= FileLength) {
-      FixPoint += 0x1000;
-    }
-    FixPoint -= 0x1000;
-    
-    if ((UINTN) FixPoint < ((UINTN) PadFile + GetFfsHeaderLength(PadFile))) {
-      //
-      // No alignment FixPoint in this Pad File.
-      //
-      continue;
-    }
-
-    if ((UINTN) FvImage->Eof - (UINTN)FixPoint <= 0x20000) {    
-      //
-      // Find the position to place ApResetVector
-      //
-      *Pointer = FixPoint;
-      return EFI_SUCCESS;
-    }
-  }
-  
-  return EFI_NOT_FOUND;
 }
 
 EFI_STATUS
@@ -3612,7 +4152,7 @@ Returns:
         CapInfo->Flags |= CAPSULE_FLAGS_INITIATE_RESET;
       }
     } else if (strstr (Value, "PersistAcrossReset") != NULL) {
-      CapInfo->Flags |= CAPSULE_FLAGS_PERSIST_ACROSS_RESET; 
+      CapInfo->Flags |= CAPSULE_FLAGS_PERSIST_ACROSS_RESET;
       if (strstr (Value, "InitiateReset") != NULL) {
         CapInfo->Flags |= CAPSULE_FLAGS_INITIATE_RESET;
       }
@@ -3665,12 +4205,12 @@ Returns:
       // Add the file
       //
       strcpy (CapInfo->CapFiles[Index], Value);
-      DebugMsg (NULL, 0, 9, "Capsule component file", "the %uth file name is %s", (unsigned) Index, CapInfo->CapFiles[Index]); 
+      DebugMsg (NULL, 0, 9, "Capsule component file", "the %uth file name is %s", (unsigned) Index, CapInfo->CapFiles[Index]);
     } else {
       break;
     }
   }
-  
+
   if (Index == 0) {
     Warning (NULL, 0, 0, "Capsule components are not specified.", NULL);
   }
@@ -3713,7 +4253,7 @@ Returns:
   UINT32                Index;
   FILE                  *fpin, *fpout;
   EFI_STATUS            Status;
-  
+
   if (InfFileImage != NULL) {
     //
     // Initialize file structures
@@ -3721,7 +4261,7 @@ Returns:
     InfMemoryFile.FileImage           = InfFileImage;
     InfMemoryFile.CurrentFilePointer  = InfFileImage;
     InfMemoryFile.Eof                 = InfFileImage + InfFileSize;
-  
+
     //
     // Parse the Cap inf file for header information
     //
@@ -3730,7 +4270,7 @@ Returns:
       return Status;
     }
   }
-  
+
   if (mCapDataInfo.HeaderSize == 0) {
     //
     // make header size align 16 bytes.
@@ -3743,16 +4283,16 @@ Returns:
     Error (NULL, 0, 2000, "Invalid parameter", "The specified HeaderSize cannot be less than the size of EFI_CAPSULE_HEADER.");
     return EFI_INVALID_PARAMETER;
   }
-  
+
   if (CapFileName == NULL && mCapDataInfo.CapName[0] != '\0') {
     CapFileName = mCapDataInfo.CapName;
   }
-  
+
   if (CapFileName == NULL) {
     Error (NULL, 0, 2001, "Missing required argument", "Output Capsule file name");
     return EFI_INVALID_PARAMETER;
   }
-  
+
   //
   // Set Default Capsule Guid value
   //
@@ -3790,7 +4330,7 @@ Returns:
   // Initialize the capsule header to zero
   //
   memset (CapBuffer, 0, mCapDataInfo.HeaderSize);
-  
+
   //
   // create capsule header and get capsule body
   //
@@ -3816,7 +4356,7 @@ Returns:
     Index ++;
     CapSize += FileSize;
   }
-  
+
   //
   // write capsule data into the output file
   //
@@ -3829,7 +4369,8 @@ Returns:
 
   fwrite (CapBuffer, 1, CapSize, fpout);
   fclose (fpout);
-  
+  free (CapBuffer);
+
   VerboseMsg ("The size of the generated capsule image is %u bytes", (unsigned) CapSize);
 
   return EFI_SUCCESS;

@@ -6,14 +6,8 @@
   PKCS#7 is a general-purpose cryptographic standard (defined by RFC2315,
   available at http://tools.ietf.org/html/rfc2315).
 
-Copyright (c) 2015, Intel Corporation. All rights reserved.<BR>
-This program and the accompanying materials are licensed and made available under
-the terms and conditions of the BSD License that accompanies this distribution.
-The full text of the license may be found at
-http://opensource.org/licenses/bsd-license.php.
-
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+Copyright (c) 2015 - 2017, Intel Corporation. All rights reserved.<BR>
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -31,7 +25,6 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
   }
 
 typedef struct _EFI_PKCS7_VERIFY_PROTOCOL EFI_PKCS7_VERIFY_PROTOCOL;
-
 
 /**
   Processes a buffer containing binary DER-encoded PKCS7 signature.
@@ -121,7 +114,7 @@ typedef struct _EFI_PKCS7_VERIFY_PROTOCOL EFI_PKCS7_VERIFY_PROTOCOL;
 **/
 typedef
 EFI_STATUS
-(EFIAPI *EFI_PKCS7_VERIFY_BUFFER) (
+(EFIAPI *EFI_PKCS7_VERIFY_BUFFER)(
   IN EFI_PKCS7_VERIFY_PROTOCOL    *This,
   IN VOID                         *SignedData,
   IN UINTN                        SignedDataSize,
@@ -139,6 +132,14 @@ EFI_STATUS
   The hash of the signed data content is calculated and passed by the caller. Function
   verifies the signature of the content is valid and signing certificate was not revoked
   and is contained within a list of trusted signers.
+
+  Note: because this function uses hashes and the specification contains a variety of
+        hash choices, you should be aware that the check against the RevokedDb list
+        will improperly succeed if the signature is revoked using a different hash
+        algorithm.  For this reason, you should either cycle through all UEFI supported
+        hashes to see if one is forbidden, or rely on a single hash choice only if the
+        UEFI signature authority only signs and revokes with a single hash (at time
+        of writing, this hash choice is SHA256).
 
   @param[in]     This                 Pointer to EFI_PKCS7_VERIFY_PROTOCOL instance.
   @param[in]     Signature            Points to buffer containing ASN.1 DER-encoded PKCS
@@ -194,7 +195,7 @@ EFI_STATUS
 **/
 typedef
 EFI_STATUS
-(EFIAPI *EFI_PKCS7_VERIFY_SIGNATURE) (
+(EFIAPI *EFI_PKCS7_VERIFY_SIGNATURE)(
   IN EFI_PKCS7_VERIFY_PROTOCOL   *This,
   IN VOID                        *Signature,
   IN UINTN                       SignatureSize,
@@ -212,10 +213,10 @@ EFI_STATUS
 /// Support of other hash algorithms is optional.
 ///
 struct _EFI_PKCS7_VERIFY_PROTOCOL {
-  EFI_PKCS7_VERIFY_BUFFER         VerifyBuffer;
-  EFI_PKCS7_VERIFY_SIGNATURE      VerifySignature;
+  EFI_PKCS7_VERIFY_BUFFER       VerifyBuffer;
+  EFI_PKCS7_VERIFY_SIGNATURE    VerifySignature;
 };
 
-extern EFI_GUID gEfiPkcs7VerifyProtocolGuid;
+extern EFI_GUID  gEfiPkcs7VerifyProtocolGuid;
 
 #endif

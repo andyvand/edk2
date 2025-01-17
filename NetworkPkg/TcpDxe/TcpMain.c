@@ -2,15 +2,9 @@
   Implementation of EFI_TCP4_PROTOCOL and EFI_TCP6_PROTOCOL.
 
   (C) Copyright 2014 Hewlett-Packard Development Company, L.P.<BR>
-  Copyright (c) 2009 - 2015, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2009 - 2018, Intel Corporation. All rights reserved.<BR>
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php.
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -30,16 +24,20 @@
 **/
 EFI_STATUS
 TcpChkDataBuf (
-  IN UINT32                 DataLen,
-  IN UINT32                 FragmentCount,
-  IN EFI_TCP4_FRAGMENT_DATA *FragmentTable
+  IN UINT32                  DataLen,
+  IN UINT32                  FragmentCount,
+  IN EFI_TCP4_FRAGMENT_DATA  *FragmentTable
   )
 {
-  UINT32 Index;
+  UINT32  Index;
 
-  UINT32 Len;
+  UINT32  Len;
 
   for (Index = 0, Len = 0; Index < FragmentCount; Index++) {
+    if (FragmentTable[Index].FragmentBuffer == NULL) {
+      return EFI_INVALID_PARAMETER;
+    }
+
     Len = Len + FragmentTable[Index].FragmentLength;
   }
 
@@ -76,12 +74,12 @@ TcpChkDataBuf (
 EFI_STATUS
 EFIAPI
 Tcp4GetModeData (
-  IN   EFI_TCP4_PROTOCOL                  *This,
-  OUT  EFI_TCP4_CONNECTION_STATE          *Tcp4State      OPTIONAL,
-  OUT  EFI_TCP4_CONFIG_DATA               *Tcp4ConfigData OPTIONAL,
-  OUT  EFI_IP4_MODE_DATA                  *Ip4ModeData    OPTIONAL,
-  OUT  EFI_MANAGED_NETWORK_CONFIG_DATA    *MnpConfigData  OPTIONAL,
-  OUT  EFI_SIMPLE_NETWORK_MODE            *SnpModeData    OPTIONAL
+  IN   EFI_TCP4_PROTOCOL                *This,
+  OUT  EFI_TCP4_CONNECTION_STATE        *Tcp4State      OPTIONAL,
+  OUT  EFI_TCP4_CONFIG_DATA             *Tcp4ConfigData OPTIONAL,
+  OUT  EFI_IP4_MODE_DATA                *Ip4ModeData    OPTIONAL,
+  OUT  EFI_MANAGED_NETWORK_CONFIG_DATA  *MnpConfigData  OPTIONAL,
+  OUT  EFI_SIMPLE_NETWORK_MODE          *SnpModeData    OPTIONAL
   )
 {
   TCP4_MODE_DATA  TcpMode;
@@ -91,13 +89,13 @@ Tcp4GetModeData (
     return EFI_INVALID_PARAMETER;
   }
 
-  Sock                    = SOCK_FROM_THIS (This);
+  Sock = SOCK_FROM_THIS (This);
 
-  TcpMode.Tcp4State       = Tcp4State;
-  TcpMode.Tcp4ConfigData  = Tcp4ConfigData;
-  TcpMode.Ip4ModeData     = Ip4ModeData;
-  TcpMode.MnpConfigData   = MnpConfigData;
-  TcpMode.SnpModeData     = SnpModeData;
+  TcpMode.Tcp4State      = Tcp4State;
+  TcpMode.Tcp4ConfigData = Tcp4ConfigData;
+  TcpMode.Ip4ModeData    = Ip4ModeData;
+  TcpMode.MnpConfigData  = MnpConfigData;
+  TcpMode.SnpModeData    = SnpModeData;
 
   return SockGetMode (Sock, &TcpMode);
 }
@@ -127,8 +125,8 @@ Tcp4GetModeData (
 EFI_STATUS
 EFIAPI
 Tcp4Configure (
-  IN EFI_TCP4_PROTOCOL        * This,
-  IN EFI_TCP4_CONFIG_DATA     * TcpConfigData OPTIONAL
+  IN EFI_TCP4_PROTOCOL     *This,
+  IN EFI_TCP4_CONFIG_DATA  *TcpConfigData OPTIONAL
   )
 {
   EFI_TCP4_OPTION  *Option;
@@ -145,21 +143,21 @@ Tcp4Configure (
   // Tcp protocol related parameter check will be conducted here
   //
   if (NULL != TcpConfigData) {
-
     CopyMem (&Ip, &TcpConfigData->AccessPoint.RemoteAddress, sizeof (IP4_ADDR));
-    if ((Ip != 0) && !NetIp4IsUnicast (NTOHL (Ip), 0)) {
+    if (IP4_IS_LOCAL_BROADCAST (NTOHL (Ip))) {
       return EFI_INVALID_PARAMETER;
     }
 
-    if (TcpConfigData->AccessPoint.ActiveFlag && (0 == TcpConfigData->AccessPoint.RemotePort || (Ip == 0))) {
+    if (TcpConfigData->AccessPoint.ActiveFlag && ((0 == TcpConfigData->AccessPoint.RemotePort) || (Ip == 0))) {
       return EFI_INVALID_PARAMETER;
     }
 
     if (!TcpConfigData->AccessPoint.UseDefaultAddress) {
-
       CopyMem (&Ip, &TcpConfigData->AccessPoint.StationAddress, sizeof (IP4_ADDR));
       CopyMem (&SubnetMask, &TcpConfigData->AccessPoint.SubnetMask, sizeof (IP4_ADDR));
-      if (!NetIp4IsUnicast (NTOHL (Ip), 0) || !IP4_IS_VALID_NETMASK (NTOHL (SubnetMask))) {
+      if (!IP4_IS_VALID_NETMASK (NTOHL (SubnetMask)) ||
+          ((SubnetMask != 0) && !NetIp4IsUnicast (NTOHL (Ip), NTOHL (SubnetMask))))
+      {
         return EFI_INVALID_PARAMETER;
       }
     }
@@ -213,26 +211,26 @@ Tcp4Configure (
 EFI_STATUS
 EFIAPI
 Tcp4Routes (
-  IN EFI_TCP4_PROTOCOL           *This,
-  IN BOOLEAN                     DeleteRoute,
-  IN EFI_IPv4_ADDRESS            *SubnetAddress,
-  IN EFI_IPv4_ADDRESS            *SubnetMask,
-  IN EFI_IPv4_ADDRESS            *GatewayAddress
+  IN EFI_TCP4_PROTOCOL  *This,
+  IN BOOLEAN            DeleteRoute,
+  IN EFI_IPv4_ADDRESS   *SubnetAddress,
+  IN EFI_IPv4_ADDRESS   *SubnetMask,
+  IN EFI_IPv4_ADDRESS   *GatewayAddress
   )
 {
-  SOCKET          *Sock;
-  TCP4_ROUTE_INFO RouteInfo;
+  SOCKET           *Sock;
+  TCP4_ROUTE_INFO  RouteInfo;
 
   if (NULL == This) {
     return EFI_INVALID_PARAMETER;
   }
 
-  Sock                      = SOCK_FROM_THIS (This);
+  Sock = SOCK_FROM_THIS (This);
 
-  RouteInfo.DeleteRoute     = DeleteRoute;
-  RouteInfo.SubnetAddress   = SubnetAddress;
-  RouteInfo.SubnetMask      = SubnetMask;
-  RouteInfo.GatewayAddress  = GatewayAddress;
+  RouteInfo.DeleteRoute    = DeleteRoute;
+  RouteInfo.SubnetAddress  = SubnetAddress;
+  RouteInfo.SubnetMask     = SubnetMask;
+  RouteInfo.GatewayAddress = GatewayAddress;
 
   return SockRoute (Sock, &RouteInfo);
 }
@@ -259,13 +257,13 @@ Tcp4Routes (
 EFI_STATUS
 EFIAPI
 Tcp4Connect (
-  IN EFI_TCP4_PROTOCOL           *This,
-  IN EFI_TCP4_CONNECTION_TOKEN   *ConnectionToken
+  IN EFI_TCP4_PROTOCOL          *This,
+  IN EFI_TCP4_CONNECTION_TOKEN  *ConnectionToken
   )
 {
   SOCKET  *Sock;
 
-  if (NULL == This || NULL == ConnectionToken || NULL == ConnectionToken->CompletionToken.Event) {
+  if ((NULL == This) || (NULL == ConnectionToken) || (NULL == ConnectionToken->CompletionToken.Event)) {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -284,7 +282,7 @@ Tcp4Connect (
   @retval EFI_SUCCESS              The listen token was queued successfully.
   @retval EFI_NOT_STARTED          The EFI_TCP4_PROTOCOL instance hasn't been
                                    configured.
-  @retval EFI_ACCESS_DENIED        The instatnce is not a passive one or it is not
+  @retval EFI_ACCESS_DENIED        The instance is not a passive one or it is not
                                    in Tcp4StateListen state or a same listen token
                                    has already existed in the listen token queue of
                                    this TCP instance.
@@ -297,13 +295,13 @@ Tcp4Connect (
 EFI_STATUS
 EFIAPI
 Tcp4Accept (
-  IN EFI_TCP4_PROTOCOL             *This,
-  IN EFI_TCP4_LISTEN_TOKEN         *ListenToken
+  IN EFI_TCP4_PROTOCOL      *This,
+  IN EFI_TCP4_LISTEN_TOKEN  *ListenToken
   )
 {
   SOCKET  *Sock;
 
-  if (NULL == This || NULL == ListenToken || NULL == ListenToken->CompletionToken.Event) {
+  if ((NULL == This) || (NULL == ListenToken) || (NULL == ListenToken->CompletionToken.Event)) {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -344,28 +342,29 @@ Tcp4Accept (
 EFI_STATUS
 EFIAPI
 Tcp4Transmit (
-  IN EFI_TCP4_PROTOCOL            *This,
-  IN EFI_TCP4_IO_TOKEN            *Token
+  IN EFI_TCP4_PROTOCOL  *This,
+  IN EFI_TCP4_IO_TOKEN  *Token
   )
 {
   SOCKET      *Sock;
   EFI_STATUS  Status;
 
-  if (NULL == This ||
-      NULL == Token ||
-      NULL == Token->CompletionToken.Event ||
-      NULL == Token->Packet.TxData ||
-      0 == Token->Packet.TxData->FragmentCount ||
-      0 == Token->Packet.TxData->DataLength
-      ) {
+  if ((NULL == This) ||
+      (NULL == Token) ||
+      (NULL == Token->CompletionToken.Event) ||
+      (NULL == Token->Packet.TxData) ||
+      (0 == Token->Packet.TxData->FragmentCount) ||
+      (0 == Token->Packet.TxData->DataLength)
+      )
+  {
     return EFI_INVALID_PARAMETER;
   }
 
   Status = TcpChkDataBuf (
-            Token->Packet.TxData->DataLength,
-            Token->Packet.TxData->FragmentCount,
-            Token->Packet.TxData->FragmentTable
-            );
+             Token->Packet.TxData->DataLength,
+             Token->Packet.TxData->FragmentCount,
+             Token->Packet.TxData->FragmentTable
+             );
   if (EFI_ERROR (Status)) {
     return Status;
   }
@@ -409,28 +408,29 @@ Tcp4Transmit (
 EFI_STATUS
 EFIAPI
 Tcp4Receive (
-  IN EFI_TCP4_PROTOCOL           *This,
-  IN EFI_TCP4_IO_TOKEN           *Token
+  IN EFI_TCP4_PROTOCOL  *This,
+  IN EFI_TCP4_IO_TOKEN  *Token
   )
 {
   SOCKET      *Sock;
   EFI_STATUS  Status;
 
-  if (NULL == This ||
-      NULL == Token ||
-      NULL == Token->CompletionToken.Event ||
-      NULL == Token->Packet.RxData ||
-      0 == Token->Packet.RxData->FragmentCount ||
-      0 == Token->Packet.RxData->DataLength
-      ) {
+  if ((NULL == This) ||
+      (NULL == Token) ||
+      (NULL == Token->CompletionToken.Event) ||
+      (NULL == Token->Packet.RxData) ||
+      (0 == Token->Packet.RxData->FragmentCount) ||
+      (0 == Token->Packet.RxData->DataLength)
+      )
+  {
     return EFI_INVALID_PARAMETER;
   }
 
   Status = TcpChkDataBuf (
-            Token->Packet.RxData->DataLength,
-            Token->Packet.RxData->FragmentCount,
-            Token->Packet.RxData->FragmentTable
-            );
+             Token->Packet.RxData->DataLength,
+             Token->Packet.RxData->FragmentCount,
+             Token->Packet.RxData->FragmentTable
+             );
   if (EFI_ERROR (Status)) {
     return Status;
   }
@@ -438,7 +438,6 @@ Tcp4Receive (
   Sock = SOCK_FROM_THIS (This);
 
   return SockRcv (Sock, Token);
-
 }
 
 /**
@@ -466,13 +465,13 @@ Tcp4Receive (
 EFI_STATUS
 EFIAPI
 Tcp4Close (
-  IN EFI_TCP4_PROTOCOL           *This,
-  IN EFI_TCP4_CLOSE_TOKEN        *CloseToken
+  IN EFI_TCP4_PROTOCOL     *This,
+  IN EFI_TCP4_CLOSE_TOKEN  *CloseToken
   )
 {
   SOCKET  *Sock;
 
-  if (NULL == This || NULL == CloseToken || NULL == CloseToken->CompletionToken.Event) {
+  if ((NULL == This) || (NULL == CloseToken) || (NULL == CloseToken->CompletionToken.Event)) {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -484,24 +483,43 @@ Tcp4Close (
 /**
   Abort an asynchronous connection, listen, transmission or receive request.
 
-  @param[in]  This                 Pointer to the EFI_TCP4_PROTOCOL instance.
-  @param[in]  Token                Pointer to a token that has been issued by
-                                   Connect(), Accept(), Transmit() or Receive(). If
-                                   NULL, all pending tokens issued by the four
-                                   functions listed above will be aborted.
+  @param  This  The pointer to the EFI_TCP4_PROTOCOL instance.
+  @param  Token The pointer to a token that has been issued by
+                EFI_TCP4_PROTOCOL.Connect(),
+                EFI_TCP4_PROTOCOL.Accept(),
+                EFI_TCP4_PROTOCOL.Transmit() or
+                EFI_TCP4_PROTOCOL.Receive(). If NULL, all pending
+                tokens issued by above four functions will be aborted. Type
+                EFI_TCP4_COMPLETION_TOKEN is defined in
+                EFI_TCP4_PROTOCOL.Connect().
 
-  @retval EFI_UNSUPPORTED          The operation is not supported in the current
-                                   implementation.
+  @retval  EFI_SUCCESS             The asynchronous I/O request is aborted and Token->Event
+                                   is signaled.
+  @retval  EFI_INVALID_PARAMETER   This is NULL.
+  @retval  EFI_NOT_STARTED         This instance hasn't been configured.
+  @retval  EFI_NO_MAPPING          When using the default address, configuration
+                                   (DHCP, BOOTP,RARP, etc.) hasn't finished yet.
+  @retval  EFI_NOT_FOUND           The asynchronous I/O request isn't found in the
+                                   transmission or receive queue. It has either
+                                   completed or wasn't issued by Transmit() and Receive().
 
 **/
 EFI_STATUS
 EFIAPI
 Tcp4Cancel (
-  IN EFI_TCP4_PROTOCOL             *This,
-  IN EFI_TCP4_COMPLETION_TOKEN     *Token OPTIONAL
+  IN EFI_TCP4_PROTOCOL          *This,
+  IN EFI_TCP4_COMPLETION_TOKEN  *Token OPTIONAL
   )
 {
-  return EFI_UNSUPPORTED;
+  SOCKET  *Sock;
+
+  if (NULL == This) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Sock = SOCK_FROM_THIS (This);
+
+  return SockCancel (Sock, Token);
 }
 
 /**
@@ -521,7 +539,7 @@ Tcp4Cancel (
 EFI_STATUS
 EFIAPI
 Tcp4Poll (
-  IN EFI_TCP4_PROTOCOL        *This
+  IN EFI_TCP4_PROTOCOL  *This
   )
 {
   SOCKET      *Sock;
@@ -531,7 +549,7 @@ Tcp4Poll (
     return EFI_INVALID_PARAMETER;
   }
 
-  Sock   = SOCK_FROM_THIS (This);
+  Sock = SOCK_FROM_THIS (This);
 
   Status = Sock->ProtoHandler (Sock, SOCK_POLL, NULL);
 
@@ -569,12 +587,12 @@ Tcp4Poll (
 EFI_STATUS
 EFIAPI
 Tcp6GetModeData (
-  IN  EFI_TCP6_PROTOCOL                  *This,
-  OUT EFI_TCP6_CONNECTION_STATE          *Tcp6State      OPTIONAL,
-  OUT EFI_TCP6_CONFIG_DATA               *Tcp6ConfigData OPTIONAL,
-  OUT EFI_IP6_MODE_DATA                  *Ip6ModeData    OPTIONAL,
-  OUT EFI_MANAGED_NETWORK_CONFIG_DATA    *MnpConfigData  OPTIONAL,
-  OUT EFI_SIMPLE_NETWORK_MODE            *SnpModeData    OPTIONAL
+  IN  EFI_TCP6_PROTOCOL                *This,
+  OUT EFI_TCP6_CONNECTION_STATE        *Tcp6State      OPTIONAL,
+  OUT EFI_TCP6_CONFIG_DATA             *Tcp6ConfigData OPTIONAL,
+  OUT EFI_IP6_MODE_DATA                *Ip6ModeData    OPTIONAL,
+  OUT EFI_MANAGED_NETWORK_CONFIG_DATA  *MnpConfigData  OPTIONAL,
+  OUT EFI_SIMPLE_NETWORK_MODE          *SnpModeData    OPTIONAL
   )
 {
   TCP6_MODE_DATA  TcpMode;
@@ -584,7 +602,7 @@ Tcp6GetModeData (
     return EFI_INVALID_PARAMETER;
   }
 
-  Sock                   = SOCK_FROM_THIS (This);
+  Sock = SOCK_FROM_THIS (This);
 
   TcpMode.Tcp6State      = Tcp6State;
   TcpMode.Tcp6ConfigData = Tcp6ConfigData;
@@ -645,8 +663,8 @@ Tcp6GetModeData (
 EFI_STATUS
 EFIAPI
 Tcp6Configure (
-  IN EFI_TCP6_PROTOCOL        *This,
-  IN EFI_TCP6_CONFIG_DATA     *Tcp6ConfigData OPTIONAL
+  IN EFI_TCP6_PROTOCOL     *This,
+  IN EFI_TCP6_CONFIG_DATA  *Tcp6ConfigData OPTIONAL
   )
 {
   EFI_TCP6_OPTION   *Option;
@@ -662,15 +680,15 @@ Tcp6Configure (
   // Tcp protocol related parameter check will be conducted here
   //
   if (NULL != Tcp6ConfigData) {
-
     Ip = &Tcp6ConfigData->AccessPoint.RemoteAddress;
     if (!NetIp6IsUnspecifiedAddr (Ip) && !NetIp6IsValidUnicast (Ip)) {
       return EFI_INVALID_PARAMETER;
     }
 
     if (Tcp6ConfigData->AccessPoint.ActiveFlag &&
-        (0 == Tcp6ConfigData->AccessPoint.RemotePort || NetIp6IsUnspecifiedAddr (Ip))
-        ) {
+        ((0 == Tcp6ConfigData->AccessPoint.RemotePort) || NetIp6IsUnspecifiedAddr (Ip))
+        )
+    {
       return EFI_INVALID_PARAMETER;
     }
 
@@ -733,13 +751,13 @@ Tcp6Configure (
 EFI_STATUS
 EFIAPI
 Tcp6Connect (
-  IN EFI_TCP6_PROTOCOL           *This,
-  IN EFI_TCP6_CONNECTION_TOKEN   *ConnectionToken
+  IN EFI_TCP6_PROTOCOL          *This,
+  IN EFI_TCP6_CONNECTION_TOKEN  *ConnectionToken
   )
 {
   SOCKET  *Sock;
 
-  if (NULL == This || NULL == ConnectionToken || NULL == ConnectionToken->CompletionToken.Event) {
+  if ((NULL == This) || (NULL == ConnectionToken) || (NULL == ConnectionToken->CompletionToken.Event)) {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -778,7 +796,7 @@ Tcp6Connect (
   @retval EFI_INVALID_PARAMETER  One or more of the following are TRUE:
                                  - This is NULL.
                                  - ListenToken is NULL.
-                                 - ListentToken->CompletionToken.Event is NULL.
+                                 - ListenToken->CompletionToken.Event is NULL.
   @retval EFI_OUT_OF_RESOURCES   Could not allocate enough resource to finish the operation.
   @retval EFI_DEVICE_ERROR       Any unexpected error not belonging to a category listed above.
 
@@ -786,13 +804,13 @@ Tcp6Connect (
 EFI_STATUS
 EFIAPI
 Tcp6Accept (
-  IN EFI_TCP6_PROTOCOL             *This,
-  IN EFI_TCP6_LISTEN_TOKEN         *ListenToken
+  IN EFI_TCP6_PROTOCOL      *This,
+  IN EFI_TCP6_LISTEN_TOKEN  *ListenToken
   )
 {
   SOCKET  *Sock;
 
-  if (NULL == This || NULL == ListenToken || NULL == ListenToken->CompletionToken.Event) {
+  if ((NULL == This) || (NULL == ListenToken) || (NULL == ListenToken->CompletionToken.Event)) {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -841,28 +859,29 @@ Tcp6Accept (
 EFI_STATUS
 EFIAPI
 Tcp6Transmit (
-  IN EFI_TCP6_PROTOCOL            *This,
-  IN EFI_TCP6_IO_TOKEN            *Token
+  IN EFI_TCP6_PROTOCOL  *This,
+  IN EFI_TCP6_IO_TOKEN  *Token
   )
 {
   SOCKET      *Sock;
   EFI_STATUS  Status;
 
-  if (NULL == This ||
-      NULL == Token ||
-      NULL == Token->CompletionToken.Event ||
-      NULL == Token->Packet.TxData ||
-      0 == Token->Packet.TxData->FragmentCount ||
-      0 == Token->Packet.TxData->DataLength
-      ) {
+  if ((NULL == This) ||
+      (NULL == Token) ||
+      (NULL == Token->CompletionToken.Event) ||
+      (NULL == Token->Packet.TxData) ||
+      (0 == Token->Packet.TxData->FragmentCount) ||
+      (0 == Token->Packet.TxData->DataLength)
+      )
+  {
     return EFI_INVALID_PARAMETER;
   }
 
   Status = TcpChkDataBuf (
-            Token->Packet.TxData->DataLength,
-            Token->Packet.TxData->FragmentCount,
-            (EFI_TCP4_FRAGMENT_DATA *) Token->Packet.TxData->FragmentTable
-            );
+             Token->Packet.TxData->DataLength,
+             Token->Packet.TxData->FragmentCount,
+             (EFI_TCP4_FRAGMENT_DATA *)Token->Packet.TxData->FragmentTable
+             );
   if (EFI_ERROR (Status)) {
     return Status;
   }
@@ -921,28 +940,29 @@ Tcp6Transmit (
 EFI_STATUS
 EFIAPI
 Tcp6Receive (
-  IN EFI_TCP6_PROTOCOL           *This,
-  IN EFI_TCP6_IO_TOKEN           *Token
+  IN EFI_TCP6_PROTOCOL  *This,
+  IN EFI_TCP6_IO_TOKEN  *Token
   )
 {
   SOCKET      *Sock;
   EFI_STATUS  Status;
 
-  if (NULL == This ||
-      NULL == Token ||
-      NULL == Token->CompletionToken.Event ||
-      NULL == Token->Packet.RxData ||
-      0 == Token->Packet.RxData->FragmentCount ||
-      0 == Token->Packet.RxData->DataLength
-      ) {
+  if ((NULL == This) ||
+      (NULL == Token) ||
+      (NULL == Token->CompletionToken.Event) ||
+      (NULL == Token->Packet.RxData) ||
+      (0 == Token->Packet.RxData->FragmentCount) ||
+      (0 == Token->Packet.RxData->DataLength)
+      )
+  {
     return EFI_INVALID_PARAMETER;
   }
 
   Status = TcpChkDataBuf (
-            Token->Packet.RxData->DataLength,
-            Token->Packet.RxData->FragmentCount,
-            (EFI_TCP4_FRAGMENT_DATA *) Token->Packet.RxData->FragmentTable
-            );
+             Token->Packet.RxData->DataLength,
+             Token->Packet.RxData->FragmentCount,
+             (EFI_TCP4_FRAGMENT_DATA *)Token->Packet.RxData->FragmentTable
+             );
   if (EFI_ERROR (Status)) {
     return Status;
   }
@@ -982,13 +1002,13 @@ Tcp6Receive (
 EFI_STATUS
 EFIAPI
 Tcp6Close (
-  IN EFI_TCP6_PROTOCOL           *This,
-  IN EFI_TCP6_CLOSE_TOKEN        *CloseToken
+  IN EFI_TCP6_PROTOCOL     *This,
+  IN EFI_TCP6_CLOSE_TOKEN  *CloseToken
   )
 {
   SOCKET  *Sock;
 
-  if (NULL == This || NULL == CloseToken || NULL == CloseToken->CompletionToken.Event) {
+  if ((NULL == This) || (NULL == CloseToken) || (NULL == CloseToken->CompletionToken.Event)) {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -998,20 +1018,20 @@ Tcp6Close (
 }
 
 /**
-  Abort an asynchronous connection, listen, transmission, or receive request.
+  Abort an asynchronous connection, listen, transmission or receive request.
 
-  The Cancel() function aborts a pending connection, listen, transmit, or
+  The Cancel() function aborts a pending connection, listen, transmit or
   receive request.
 
-  If Token is not NULL and the token is in the connection, listen, transmission,
+  If Token is not NULL and the token is in the connection, listen, transmission
   or receive queue when it is being cancelled, its Token->Status will be set
-  to EFI_ABORTED, and then Token->Event will be signaled.
+  to EFI_ABORTED and then Token->Event will be signaled.
 
   If the token is not in one of the queues, which usually means that the
   asynchronous operation has completed, EFI_NOT_FOUND is returned.
 
   If Token is NULL all asynchronous token issued by Connect(), Accept(),
-  Transmit(), and Receive() will be aborted.
+  Transmit() and Receive() will be aborted.
 
   @param[in] This                Pointer to the EFI_TCP6_PROTOCOL instance.
   @param[in] Token               Pointer to a token that has been issued by
@@ -1023,17 +1043,31 @@ Tcp6Close (
                                  EFI_TCP6_COMPLETION_TOKEN is defined in
                                  EFI_TCP_PROTOCOL.Connect().
 
-  @retval EFI_UNSUPPORTED        The implementation does not support this function.
+  @retval EFI_SUCCESS            The asynchronous I/O request is aborted and Token->Event
+                                 is signaled.
+  @retval EFI_INVALID_PARAMETER  This is NULL.
+  @retval EFI_NOT_STARTED        This instance hasn't been configured.
+  @retval EFI_NOT_FOUND          The asynchronous I/O request isn't found in the transmission or
+                                 receive queue. It has either completed or wasn't issued by
+                                 Transmit() and Receive().
 
 **/
 EFI_STATUS
 EFIAPI
 Tcp6Cancel (
-  IN EFI_TCP6_PROTOCOL           *This,
-  IN EFI_TCP6_COMPLETION_TOKEN   *Token OPTIONAL
+  IN EFI_TCP6_PROTOCOL          *This,
+  IN EFI_TCP6_COMPLETION_TOKEN  *Token OPTIONAL
   )
 {
-  return EFI_UNSUPPORTED;
+  SOCKET  *Sock;
+
+  if (NULL == This) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Sock = SOCK_FROM_THIS (This);
+
+  return SockCancel (Sock, Token);
 }
 
 /**
@@ -1056,7 +1090,7 @@ Tcp6Cancel (
 EFI_STATUS
 EFIAPI
 Tcp6Poll (
-  IN EFI_TCP6_PROTOCOL        *This
+  IN EFI_TCP6_PROTOCOL  *This
   )
 {
   SOCKET      *Sock;
@@ -1066,10 +1100,9 @@ Tcp6Poll (
     return EFI_INVALID_PARAMETER;
   }
 
-  Sock   = SOCK_FROM_THIS (This);
+  Sock = SOCK_FROM_THIS (This);
 
   Status = Sock->ProtoHandler (Sock, SOCK_POLL, NULL);
 
   return Status;
 }
-

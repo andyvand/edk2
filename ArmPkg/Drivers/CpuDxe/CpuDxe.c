@@ -3,13 +3,7 @@
   Copyright (c) 2008 - 2009, Apple Inc. All rights reserved.<BR>
   Copyright (c) 2011, ARM Limited. All rights reserved.
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -17,8 +11,9 @@
 
 #include <Guid/IdleLoopEvent.h>
 
-BOOLEAN mInterruptState   = FALSE;
+#include <Library/MemoryAllocationLib.h>
 
+BOOLEAN  mIsFlushingGCD;
 
 /**
   This function flushes the range of addresses from Start to Start+Length
@@ -41,7 +36,7 @@ BOOLEAN mInterruptState   = FALSE;
 
   @retval EFI_SUCCESS           The address range from Start to Start+Length was flushed from
                                 the processor's data cache.
-  @retval EFI_UNSUPPORTEDT      The processor does not support the cache flush type specified
+  @retval EFI_UNSUPPORTED       The processor does not support the cache flush type specified
                                 by FlushType.
   @retval EFI_DEVICE_ERROR      The address range from Start to Start+Length could not be flushed
                                 from the processor's data cache.
@@ -50,13 +45,12 @@ BOOLEAN mInterruptState   = FALSE;
 EFI_STATUS
 EFIAPI
 CpuFlushCpuDataCache (
-  IN EFI_CPU_ARCH_PROTOCOL           *This,
-  IN EFI_PHYSICAL_ADDRESS            Start,
-  IN UINT64                          Length,
-  IN EFI_CPU_FLUSH_TYPE              FlushType
+  IN EFI_CPU_ARCH_PROTOCOL  *This,
+  IN EFI_PHYSICAL_ADDRESS   Start,
+  IN UINT64                 Length,
+  IN EFI_CPU_FLUSH_TYPE     FlushType
   )
 {
-
   switch (FlushType) {
     case EfiCpuFlushTypeWriteBack:
       WriteBackDataCacheRange ((VOID *)(UINTN)Start, (UINTN)Length);
@@ -74,7 +68,6 @@ CpuFlushCpuDataCache (
   return EFI_SUCCESS;
 }
 
-
 /**
   This function enables interrupt processing by the processor.
 
@@ -87,15 +80,13 @@ CpuFlushCpuDataCache (
 EFI_STATUS
 EFIAPI
 CpuEnableInterrupt (
-  IN EFI_CPU_ARCH_PROTOCOL          *This
+  IN EFI_CPU_ARCH_PROTOCOL  *This
   )
 {
   ArmEnableInterrupts ();
 
-  mInterruptState  = TRUE;
   return EFI_SUCCESS;
 }
-
 
 /**
   This function disables interrupt processing by the processor.
@@ -109,15 +100,13 @@ CpuEnableInterrupt (
 EFI_STATUS
 EFIAPI
 CpuDisableInterrupt (
-  IN EFI_CPU_ARCH_PROTOCOL          *This
+  IN EFI_CPU_ARCH_PROTOCOL  *This
   )
 {
   ArmDisableInterrupts ();
 
-  mInterruptState = FALSE;
   return EFI_SUCCESS;
 }
-
 
 /**
   This function retrieves the processor's current interrupt state a returns it in
@@ -135,18 +124,17 @@ CpuDisableInterrupt (
 EFI_STATUS
 EFIAPI
 CpuGetInterruptState (
-  IN  EFI_CPU_ARCH_PROTOCOL         *This,
-  OUT BOOLEAN                       *State
+  IN  EFI_CPU_ARCH_PROTOCOL  *This,
+  OUT BOOLEAN                *State
   )
 {
   if (State == NULL) {
     return EFI_INVALID_PARAMETER;
   }
 
-  *State = mInterruptState;
+  *State = ArmGetInterruptState ();
   return EFI_SUCCESS;
 }
-
 
 /**
   This function generates an INIT on the processor. If this function succeeds, then the
@@ -167,8 +155,8 @@ CpuGetInterruptState (
 EFI_STATUS
 EFIAPI
 CpuInit (
-  IN EFI_CPU_ARCH_PROTOCOL           *This,
-  IN EFI_CPU_INIT_TYPE               InitType
+  IN EFI_CPU_ARCH_PROTOCOL  *This,
+  IN EFI_CPU_INIT_TYPE      InitType
   )
 {
   return EFI_UNSUPPORTED;
@@ -177,9 +165,9 @@ CpuInit (
 EFI_STATUS
 EFIAPI
 CpuRegisterInterruptHandler (
-  IN EFI_CPU_ARCH_PROTOCOL          *This,
-  IN EFI_EXCEPTION_TYPE             InterruptType,
-  IN EFI_CPU_INTERRUPT_HANDLER      InterruptHandler
+  IN EFI_CPU_ARCH_PROTOCOL      *This,
+  IN EFI_EXCEPTION_TYPE         InterruptType,
+  IN EFI_CPU_INTERRUPT_HANDLER  InterruptHandler
   )
 {
   return RegisterInterruptHandler (InterruptType, InterruptHandler);
@@ -188,10 +176,10 @@ CpuRegisterInterruptHandler (
 EFI_STATUS
 EFIAPI
 CpuGetTimerValue (
-  IN  EFI_CPU_ARCH_PROTOCOL          *This,
-  IN  UINT32                         TimerIndex,
-  OUT UINT64                         *TimerValue,
-  OUT UINT64                         *TimerPeriod   OPTIONAL
+  IN  EFI_CPU_ARCH_PROTOCOL  *This,
+  IN  UINT32                 TimerIndex,
+  OUT UINT64                 *TimerValue,
+  OUT UINT64                 *TimerPeriod   OPTIONAL
   )
 {
   return EFI_UNSUPPORTED;
@@ -208,8 +196,8 @@ CpuGetTimerValue (
 VOID
 EFIAPI
 IdleLoopEventCallback (
-  IN EFI_EVENT                Event,
-  IN VOID                     *Context
+  IN EFI_EVENT  Event,
+  IN VOID       *Context
   )
 {
   CpuSleep ();
@@ -218,8 +206,8 @@ IdleLoopEventCallback (
 //
 // Globals used to initialize the protocol
 //
-EFI_HANDLE            mCpuHandle = NULL;
-EFI_CPU_ARCH_PROTOCOL mCpu = {
+EFI_HANDLE             mCpuHandle = NULL;
+EFI_CPU_ARCH_PROTOCOL  mCpu       = {
   CpuFlushCpuDataCache,
   CpuEnableInterrupt,
   CpuDisableInterrupt,
@@ -229,39 +217,133 @@ EFI_CPU_ARCH_PROTOCOL mCpu = {
   CpuGetTimerValue,
   CpuSetMemoryAttributes,
   0,          // NumberOfTimers
-  4,          // DmaBufferAlignment
+  2048,       // DmaBufferAlignment
 };
+
+STATIC
+VOID
+InitializeDma (
+  IN OUT  EFI_CPU_ARCH_PROTOCOL  *CpuArchProtocol
+  )
+{
+  CpuArchProtocol->DmaBufferAlignment = ArmCacheWritebackGranule ();
+}
+
+/**
+  Map all EfiConventionalMemory regions in the memory map with NX
+  attributes so that allocating or freeing EfiBootServicesData regions
+  does not result in changes to memory permission attributes.
+
+**/
+STATIC
+VOID
+RemapUnusedMemoryNx (
+  VOID
+  )
+{
+  UINT64                 TestBit;
+  UINTN                  MemoryMapSize;
+  UINTN                  MapKey;
+  UINTN                  DescriptorSize;
+  UINT32                 DescriptorVersion;
+  EFI_MEMORY_DESCRIPTOR  *MemoryMap;
+  EFI_MEMORY_DESCRIPTOR  *MemoryMapEntry;
+  EFI_MEMORY_DESCRIPTOR  *MemoryMapEnd;
+  EFI_STATUS             Status;
+
+  TestBit = LShiftU64 (1, EfiBootServicesData);
+  if ((PcdGet64 (PcdDxeNxMemoryProtectionPolicy) & TestBit) == 0) {
+    return;
+  }
+
+  MemoryMapSize = 0;
+  MemoryMap     = NULL;
+
+  Status = gBS->GetMemoryMap (
+                  &MemoryMapSize,
+                  MemoryMap,
+                  &MapKey,
+                  &DescriptorSize,
+                  &DescriptorVersion
+                  );
+  ASSERT (Status == EFI_BUFFER_TOO_SMALL);
+  do {
+    MemoryMap = (EFI_MEMORY_DESCRIPTOR *)AllocatePool (MemoryMapSize);
+    ASSERT (MemoryMap != NULL);
+    Status = gBS->GetMemoryMap (
+                    &MemoryMapSize,
+                    MemoryMap,
+                    &MapKey,
+                    &DescriptorSize,
+                    &DescriptorVersion
+                    );
+    if (EFI_ERROR (Status)) {
+      FreePool (MemoryMap);
+    }
+  } while (Status == EFI_BUFFER_TOO_SMALL);
+
+  ASSERT_EFI_ERROR (Status);
+
+  MemoryMapEntry = MemoryMap;
+  MemoryMapEnd   = (EFI_MEMORY_DESCRIPTOR *)((UINT8 *)MemoryMap + MemoryMapSize);
+  while ((UINTN)MemoryMapEntry < (UINTN)MemoryMapEnd) {
+    if (MemoryMapEntry->Type == EfiConventionalMemory) {
+      ArmSetMemoryAttributes (
+        MemoryMapEntry->PhysicalStart,
+        EFI_PAGES_TO_SIZE (MemoryMapEntry->NumberOfPages),
+        EFI_MEMORY_XP,
+        EFI_MEMORY_XP
+        );
+    }
+
+    MemoryMapEntry = NEXT_MEMORY_DESCRIPTOR (MemoryMapEntry, DescriptorSize);
+  }
+}
 
 EFI_STATUS
 CpuDxeInitialize (
-  IN EFI_HANDLE         ImageHandle,
-  IN EFI_SYSTEM_TABLE   *SystemTable
+  IN EFI_HANDLE        ImageHandle,
+  IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
   EFI_STATUS  Status;
-  EFI_EVENT    IdleLoopEvent;
+  EFI_EVENT   IdleLoopEvent;
 
   InitializeExceptions (&mCpu);
 
+  InitializeDma (&mCpu);
+
+  //
+  // Once we install the CPU arch protocol, the DXE core's memory
+  // protection routines will invoke them to manage the permissions of page
+  // allocations as they are created. Given that this includes pages
+  // allocated for page tables by this driver, we must ensure that unused
+  // memory is mapped with the same permissions as boot services data
+  // regions. Otherwise, we may end up with unbounded recursion, due to the
+  // fact that updating permissions on a newly allocated page table may trigger
+  // a block entry split, which triggers a page table allocation, etc etc
+  //
+  if (FeaturePcdGet (PcdRemapUnusedMemoryNx)) {
+    RemapUnusedMemoryNx ();
+  }
+
   Status = gBS->InstallMultipleProtocolInterfaces (
-                &mCpuHandle,
-                &gEfiCpuArchProtocolGuid,           &mCpu,
-                &gVirtualUncachedPagesProtocolGuid, &gVirtualUncachedPages,
-                NULL
-                );
+                  &mCpuHandle,
+                  &gEfiCpuArchProtocolGuid,
+                  &mCpu,
+                  &gEfiMemoryAttributeProtocolGuid,
+                  &mMemoryAttribute,
+                  NULL
+                  );
 
   //
   // Make sure GCD and MMU settings match. This API calls gDS->SetMemorySpaceAttributes ()
   // and that calls EFI_CPU_ARCH_PROTOCOL.SetMemoryAttributes, so this code needs to go
   // after the protocol is installed
   //
+  mIsFlushingGCD = TRUE;
   SyncCacheConfig (&mCpu);
-
-  // If the platform is a MPCore system then install the Configuration Table describing the
-  // secondary core states
-  if (ArmIsMpCore()) {
-    PublishArmProcessorTable();
-  }
+  mIsFlushingGCD = FALSE;
 
   //
   // Setup a callback for idle events

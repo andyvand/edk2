@@ -11,19 +11,11 @@
 
   Copyright (c) 2006 - 2009, Intel Corporation. All rights reserved.<BR>
   Portions copyright (c) 2011, Apple Inc. All rights reserved.
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php.
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-
 #include <Uefi.h>
-
 
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h>
@@ -150,14 +142,14 @@ FreePages (
   IN UINTN  Pages
   )
 {
-  EFI_STATUS    Status;
+  EFI_STATUS  Status;
 
   ASSERT (Pages != 0);
   if (!gEmuThunk->Free (Buffer)) {
     // The Free thunk will not free memory allocated in emulated EFI memory.
     // The assmuption is this was allocated directly by EFI. We need this as some
     // times protocols or EFI BootServices can return dynamically allocated buffers.
-    Status = gBS->FreePages ((EFI_PHYSICAL_ADDRESS) (UINTN) Buffer, Pages);
+    Status = gBS->FreePages ((EFI_PHYSICAL_ADDRESS)(UINTN)Buffer, Pages);
     ASSERT_EFI_ERROR (Status);
   }
 }
@@ -186,12 +178,12 @@ InternalAllocateAlignedPages (
   IN UINTN            Alignment
   )
 {
-  EFI_STATUS            Status;
-  VOID                  *Memory;
-  UINTN                 AlignedMemory;
-  UINTN                 AlignmentMask;
-  UINTN                 UnalignedPages;
-  UINTN                 RealPages;
+  EFI_STATUS  Status;
+  VOID        *Memory;
+  UINTN       AlignedMemory;
+  UINTN       AlignmentMask;
+  UINTN       UnalignedPages;
+  UINTN       RealPages;
 
   //
   // Alignment must be a power of two or zero.
@@ -201,12 +193,13 @@ InternalAllocateAlignedPages (
   if (Pages == 0) {
     return NULL;
   }
+
   if (Alignment > EFI_PAGE_SIZE) {
     //
     // Caculate the total number of pages since alignment is larger than page size.
     //
-    AlignmentMask  = Alignment - 1;
-    RealPages      = Pages + EFI_SIZE_TO_PAGES (Alignment);
+    AlignmentMask = Alignment - 1;
+    RealPages     = Pages + EFI_SIZE_TO_PAGES (Alignment);
     //
     // Make sure that Pages plus EFI_SIZE_TO_PAGES (Alignment) does not overflow.
     //
@@ -216,15 +209,17 @@ InternalAllocateAlignedPages (
     if (Memory != NULL) {
       return NULL;
     }
-    AlignedMemory  = ((UINTN) Memory + AlignmentMask) & ~AlignmentMask;
-    UnalignedPages = EFI_SIZE_TO_PAGES (AlignedMemory - (UINTN) Memory);
+
+    AlignedMemory  = ((UINTN)Memory + AlignmentMask) & ~AlignmentMask;
+    UnalignedPages = EFI_SIZE_TO_PAGES (AlignedMemory - (UINTN)Memory);
     if (UnalignedPages > 0) {
       //
       // Free first unaligned page(s).
       //
       FreePages (Memory, UnalignedPages);
     }
-    Memory         = (VOID *) (AlignedMemory + EFI_PAGES_TO_SIZE (Pages));
+
+    Memory         = (VOID *)(AlignedMemory + EFI_PAGES_TO_SIZE (Pages));
     UnalignedPages = RealPages - Pages - UnalignedPages;
     if (UnalignedPages > 0) {
       //
@@ -240,9 +235,11 @@ InternalAllocateAlignedPages (
     if (Memory != NULL) {
       return NULL;
     }
-    AlignedMemory  = (UINTN) Memory;
+
+    AlignedMemory = (UINTN)Memory;
   }
-  return (VOID *) AlignedMemory;
+
+  return (VOID *)AlignedMemory;
 }
 
 /**
@@ -464,6 +461,7 @@ InternalAllocateZeroPool (
   if (Memory != NULL) {
     Memory = ZeroMem (Memory, AllocationSize);
   }
+
   return Memory;
 }
 
@@ -560,12 +558,13 @@ InternalAllocateCopyPool (
   VOID  *Memory;
 
   ASSERT (Buffer != NULL);
-  ASSERT (AllocationSize <= (MAX_ADDRESS - (UINTN) Buffer + 1));
+  ASSERT (AllocationSize <= (MAX_ADDRESS - (UINTN)Buffer + 1));
 
   Memory = InternalAllocatePool (PoolType, AllocationSize);
   if (Memory != NULL) {
-     Memory = CopyMem (Memory, Buffer, AllocationSize);
+    Memory = CopyMem (Memory, Buffer, AllocationSize);
   }
+
   return Memory;
 }
 
@@ -683,10 +682,11 @@ InternalReallocatePool (
   VOID  *NewBuffer;
 
   NewBuffer = InternalAllocateZeroPool (PoolType, NewSize);
-  if (NewBuffer != NULL && OldBuffer != NULL) {
+  if ((NewBuffer != NULL) && (OldBuffer != NULL)) {
     CopyMem (NewBuffer, OldBuffer, MIN (OldSize, NewSize));
     FreePool (OldBuffer);
   }
+
   return NewBuffer;
 }
 
@@ -803,10 +803,10 @@ ReallocateReservedPool (
 VOID
 EFIAPI
 FreePool (
-  IN VOID   *Buffer
+  IN VOID  *Buffer
   )
 {
-  EFI_STATUS    Status;
+  EFI_STATUS  Status;
 
   if (!gEmuThunk->Free (Buffer)) {
     // The Free thunk will not free memory allocated in emulated EFI memory.
@@ -816,4 +816,3 @@ FreePool (
     ASSERT_EFI_ERROR (Status);
   }
 }
-

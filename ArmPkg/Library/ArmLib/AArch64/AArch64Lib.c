@@ -2,266 +2,96 @@
 
   Copyright (c) 2008 - 2009, Apple Inc. All rights reserved.<BR>
   Portions copyright (c) 2011 - 2014, ARM Ltd. All rights reserved.<BR>
+  Copyright (c) 2021, NUVIA Inc. All rights reserved.<BR>
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#include <Uefi.h>
-#include <Chipset/AArch64.h>
+#include <Base.h>
+
 #include <Library/ArmLib.h>
-#include <Library/BaseLib.h>
-#include <Library/IoLib.h>
+#include <Library/DebugLib.h>
+
+#include <AArch64/AArch64.h>
+
 #include "AArch64Lib.h"
 #include "ArmLibPrivate.h"
 
-ARM_CACHE_TYPE
-EFIAPI
-ArmCacheType (
-  VOID
-  )
-{
-  return ARM_CACHE_TYPE_WRITE_BACK;
-}
+/**
+  Check whether the CPU supports the GIC system register interface (any version)
 
-ARM_CACHE_ARCHITECTURE
-EFIAPI
-ArmCacheArchitecture (
-  VOID
-  )
-{
-  UINT32 CLIDR = ReadCLIDR ();
+  @return   Whether GIC System Register Interface is supported
 
-  return (ARM_CACHE_ARCHITECTURE)CLIDR; // BugBug Fix Me
-}
-
+**/
 BOOLEAN
 EFIAPI
-ArmDataCachePresent (
+ArmHasGicSystemRegisters (
   VOID
   )
 {
-  UINT32 CLIDR = ReadCLIDR ();
-
-  if ((CLIDR & 0x2) == 0x2) {
-    // Instruction cache exists
-    return TRUE;
-  }
-  if ((CLIDR & 0x7) == 0x4) {
-    // Unified cache
-    return TRUE;
-  }
-
-  return FALSE;
+  return ((ArmReadIdAA64Pfr0 () & AARCH64_PFR0_GIC) != 0);
 }
 
-UINTN
-EFIAPI
-ArmDataCacheSize (
-  VOID
-  )
-{
-  UINT32 NumSets;
-  UINT32 Associativity;
-  UINT32 LineSize;
-  UINT32 CCSIDR = ReadCCSIDR (0);
+/** Checks if CCIDX is implemented.
 
-  LineSize      = (1 << ((CCSIDR & 0x7) + 2));
-  Associativity = ((CCSIDR >> 3) & 0x3ff) + 1;
-  NumSets       = ((CCSIDR >> 13) & 0x7fff) + 1;
-
-  // LineSize is in words (4 byte chunks)
-  return  NumSets * Associativity * LineSize * 4;
-}
-
-UINTN
-EFIAPI
-ArmDataCacheAssociativity (
-  VOID
-  )
-{
-  UINT32 CCSIDR = ReadCCSIDR (0);
-
-  return ((CCSIDR >> 3) & 0x3ff) + 1;
-}
-
-UINTN
-ArmDataCacheSets (
-  VOID
-  )
-{
-  UINT32 CCSIDR = ReadCCSIDR (0);
-
-  return ((CCSIDR >> 13) & 0x7fff) + 1;
-}
-
-UINTN
-EFIAPI
-ArmDataCacheLineLength (
-  VOID
-  )
-{
-  UINT32 CCSIDR = ReadCCSIDR (0) & 7;
-
-  // * 4 converts to bytes
-  return (1 << (CCSIDR + 2)) * 4;
-}
-
+   @retval TRUE  CCIDX is implemented.
+   @retval FALSE CCIDX is not implemented.
+**/
 BOOLEAN
 EFIAPI
-ArmInstructionCachePresent (
+ArmHasCcidx (
   VOID
   )
 {
-  UINT32 CLIDR = ReadCLIDR ();
+  UINTN  Mmfr2;
 
-  if ((CLIDR & 1) == 1) {
-    // Instruction cache exists
-    return TRUE;
-  }
-  if ((CLIDR & 0x7) == 0x4) {
-    // Unified cache
-    return TRUE;
-  }
-
-  return FALSE;
+  Mmfr2 = ArmReadIdAA64Mmfr2 ();
+  return (((Mmfr2 >> 20) & 0xF) == 1) ? TRUE : FALSE;
 }
 
-UINTN
+/**
+  Checks whether the CPU implements the Virtualization Host Extensions.
+
+  @retval TRUE  FEAT_VHE is implemented.
+  @retval FALSE FEAT_VHE is not mplemented.
+**/
+BOOLEAN
 EFIAPI
-ArmInstructionCacheSize (
+ArmHasVhe (
   VOID
   )
 {
-  UINT32 NumSets;
-  UINT32 Associativity;
-  UINT32 LineSize;
-  UINT32 CCSIDR = ReadCCSIDR (1);
-
-  LineSize      = (1 << ((CCSIDR & 0x7) + 2));
-  Associativity = ((CCSIDR >> 3) & 0x3ff) + 1;
-  NumSets       = ((CCSIDR >> 13) & 0x7fff) + 1;
-
-  // LineSize is in words (4 byte chunks)
-  return  NumSets * Associativity * LineSize * 4;
+  return ((ArmReadIdAA64Mmfr1 () & AARCH64_MMFR1_VH) != 0);
 }
 
-UINTN
+/**
+  Checks whether the CPU implements the Trace Buffer Extension.
+
+  @retval TRUE  FEAT_TRBE is implemented.
+  @retval FALSE FEAT_TRBE is not mplemented.
+**/
+BOOLEAN
 EFIAPI
-ArmInstructionCacheAssociativity (
+ArmHasTrbe (
   VOID
   )
 {
-  UINT32 CCSIDR = ReadCCSIDR (1);
-
-  return ((CCSIDR >> 3) & 0x3ff) + 1;
+  return ((ArmReadIdAA64Dfr0 () & AARCH64_DFR0_TRBE) != 0);
 }
 
-UINTN
+/**
+  Checks whether the CPU implements the Embedded Trace Extension.
+
+  @retval TRUE  FEAT_ETE is implemented.
+  @retval FALSE FEAT_ETE is not mplemented.
+**/
+BOOLEAN
 EFIAPI
-ArmInstructionCacheSets (
+ArmHasEte (
   VOID
   )
 {
-  UINT32 CCSIDR = ReadCCSIDR (1);
-
-  return ((CCSIDR >> 13) & 0x7fff) + 1;
-}
-
-UINTN
-EFIAPI
-ArmInstructionCacheLineLength (
-  VOID
-  )
-{
-  UINT32 CCSIDR = ReadCCSIDR (1) & 7;
-
-  // * 4 converts to bytes
-  return (1 << (CCSIDR + 2)) * 4;
-}
-
-
-VOID
-AArch64DataCacheOperation (
-  IN  AARCH64_CACHE_OPERATION  DataCacheOperation
-  )
-{
-  UINTN     SavedInterruptState;
-
-  SavedInterruptState = ArmGetInterruptState ();
-  ArmDisableInterrupts();
-
-  AArch64AllDataCachesOperation (DataCacheOperation);
-
-  ArmDrainWriteBuffer ();
-
-  if (SavedInterruptState) {
-    ArmEnableInterrupts ();
-  }
-}
-
-
-VOID
-AArch64PoUDataCacheOperation (
-  IN  AARCH64_CACHE_OPERATION  DataCacheOperation
-  )
-{
-  UINTN     SavedInterruptState;
-
-  SavedInterruptState = ArmGetInterruptState ();
-  ArmDisableInterrupts ();
-
-  AArch64PerformPoUDataCacheOperation (DataCacheOperation);
-
-  ArmDrainWriteBuffer ();
-
-  if (SavedInterruptState) {
-    ArmEnableInterrupts ();
-  }
-}
-
-VOID
-EFIAPI
-ArmInvalidateDataCache (
-  VOID
-  )
-{
-  ArmDrainWriteBuffer ();
-  AArch64DataCacheOperation (ArmInvalidateDataCacheEntryBySetWay);
-}
-
-VOID
-EFIAPI
-ArmCleanInvalidateDataCache (
-  VOID
-  )
-{
-  ArmDrainWriteBuffer ();
-  AArch64DataCacheOperation (ArmCleanInvalidateDataCacheEntryBySetWay);
-}
-
-VOID
-EFIAPI
-ArmCleanDataCache (
-  VOID
-  )
-{
-  ArmDrainWriteBuffer ();
-  AArch64DataCacheOperation (ArmCleanDataCacheEntryBySetWay);
-}
-
-VOID
-EFIAPI
-ArmCleanDataCacheToPoU (
-  VOID
-  )
-{
-  ArmDrainWriteBuffer ();
-  AArch64PoUDataCacheOperation (ArmCleanDataCacheEntryBySetWay);
+  // The ID_AA64DFR0_EL1.TraceVer field identifies the presence of FEAT_ETE.
+  return ((ArmReadIdAA64Dfr0 () & AARCH64_DFR0_TRACEVER) != 0);
 }

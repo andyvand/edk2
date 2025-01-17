@@ -3,13 +3,7 @@
 
   Copyright (c) 2008 - 2009, Apple Inc. All rights reserved.<BR>
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -33,10 +27,9 @@
 EFI_STATUS
 EFIAPI
 FfsFindNextVolume (
-  IN UINTN                          Instance,
-  IN OUT EFI_PEI_FV_HANDLE          *VolumeHandle
+  IN UINTN                  Instance,
+  IN OUT EFI_PEI_FV_HANDLE  *VolumeHandle
   );
-
 
 /**
   This service enables discovery of additional firmware files.
@@ -54,17 +47,49 @@ FfsFindNextVolume (
 EFI_STATUS
 EFIAPI
 FfsFindNextFile (
-  IN EFI_FV_FILETYPE            SearchType,
-  IN EFI_PEI_FV_HANDLE          VolumeHandle,
-  IN OUT EFI_PEI_FILE_HANDLE    *FileHandle
+  IN EFI_FV_FILETYPE          SearchType,
+  IN EFI_PEI_FV_HANDLE        VolumeHandle,
+  IN OUT EFI_PEI_FILE_HANDLE  *FileHandle
   );
 
+/**
+ * This is a hook which is used to check if the section is the target one.
+ *
+ */
+typedef
+EFI_STATUS
+(EFIAPI *FFS_CHECK_SECTION_HOOK)(
+  IN EFI_COMMON_SECTION_HEADER *Section
+  );
+
+/**
+  This service enables discovery sections of a given type within a valid FFS file.
+  Caller also can provide a SectionCheckHook to do additional checking.
+
+  @param  SectionType           The value of the section type to find.
+  @param  SectionCheckHook      A hook which can check if the section is the target one.
+  @param  FileHeader            A pointer to the file header that contains the set of sections to
+                                be searched.
+  @param  SectionData           A pointer to the discovered section, if successful.
+
+  @retval EFI_SUCCESS           The section was found.
+  @retval EFI_NOT_FOUND         The section was not found.
+
+**/
+EFI_STATUS
+EFIAPI
+FfsFindSectionDataWithHook (
+  IN EFI_SECTION_TYPE        SectionType,
+  IN FFS_CHECK_SECTION_HOOK  SectionCheckHook,
+  IN EFI_PEI_FILE_HANDLE     FileHandle,
+  OUT VOID                   **SectionData
+  );
 
 /**
   This service enables discovery sections of a given type within a valid FFS file.
 
-  @param  SearchType            The value of the section type to find.
-  @param  FfsFileHeader         A pointer to the file header that contains the set of sections to
+  @param  SectionType           The value of the section type to find.
+  @param  FileHandle            A pointer to the file header that contains the set of sections to
                                 be searched.
   @param  SectionData           A pointer to the discovered section, if successful.
 
@@ -75,11 +100,10 @@ FfsFindNextFile (
 EFI_STATUS
 EFIAPI
 FfsFindSectionData (
-  IN EFI_SECTION_TYPE           SectionType,
-  IN EFI_PEI_FILE_HANDLE        FileHandle,
-  OUT VOID                      **SectionData
+  IN EFI_SECTION_TYPE     SectionType,
+  IN EFI_PEI_FILE_HANDLE  FileHandle,
+  OUT VOID                **SectionData
   );
-
 
 /**
   Find a file in the volume by name
@@ -101,12 +125,11 @@ FfsFindSectionData (
 **/
 EFI_STATUS
 EFIAPI
-FfsFindByName (
-  IN CONST  EFI_GUID            *FileName,
-  IN CONST  EFI_PEI_FV_HANDLE   VolumeHandle,
-  OUT       EFI_PEI_FILE_HANDLE *FileHandle
+FfsFindFileByName (
+  IN CONST  EFI_GUID             *FileName,
+  IN CONST  EFI_PEI_FV_HANDLE    VolumeHandle,
+  OUT       EFI_PEI_FILE_HANDLE  *FileHandle
   );
-
 
 /**
   Get information about the file by name.
@@ -127,10 +150,9 @@ FfsFindByName (
 EFI_STATUS
 EFIAPI
 FfsGetFileInfo (
-  IN CONST  EFI_PEI_FILE_HANDLE   FileHandle,
-  OUT EFI_FV_FILE_INFO            *FileInfo
+  IN CONST  EFI_PEI_FILE_HANDLE  FileHandle,
+  OUT EFI_FV_FILE_INFO           *FileInfo
   );
-
 
 /**
   Get Information about the volume by name
@@ -151,11 +173,9 @@ FfsGetFileInfo (
 EFI_STATUS
 EFIAPI
 FfsGetVolumeInfo (
-  IN  EFI_PEI_FV_HANDLE       VolumeHandle,
-  OUT EFI_FV_INFO             *VolumeInfo
+  IN  EFI_PEI_FV_HANDLE  VolumeHandle,
+  OUT EFI_FV_INFO        *VolumeInfo
   );
-
-
 
 /**
   Get Fv image from the FV type file, then add FV & FV2 Hob.
@@ -169,15 +189,14 @@ FfsGetVolumeInfo (
 EFI_STATUS
 EFIAPI
 FfsProcessFvFile (
-  IN  EFI_PEI_FILE_HANDLE   FvFileHandle
+  IN  EFI_PEI_FILE_HANDLE  FvFileHandle
   );
-
 
 /**
   Search through every FV until you find a file of type FileType
 
   @param FileType        File handle of a Fv type file.
-  @param Volumehandle    On succes Volume Handle of the match
+  @param Volumehandle    On success Volume Handle of the match
   @param FileHandle      On success File Handle of the match
 
   @retval EFI_NOT_FOUND  FV image can't be found.
@@ -187,11 +206,10 @@ FfsProcessFvFile (
 EFI_STATUS
 EFIAPI
 FfsAnyFvFindFirstFile (
-  IN  EFI_FV_FILETYPE       FileType,
-  OUT EFI_PEI_FV_HANDLE     *VolumeHandle,
-  OUT EFI_PEI_FILE_HANDLE   *FileHandle
+  IN  EFI_FV_FILETYPE      FileType,
+  OUT EFI_PEI_FV_HANDLE    *VolumeHandle,
+  OUT EFI_PEI_FILE_HANDLE  *FileHandle
   );
-
 
 /**
   Get Fv image from the FV type file, then add FV & FV2 Hob.
@@ -206,9 +224,8 @@ FfsAnyFvFindFirstFile (
 EFI_STATUS
 EFIAPI
 FfsProcessFvFile (
-  IN  EFI_PEI_FILE_HANDLE   FvFileHandle
+  IN  EFI_PEI_FILE_HANDLE  FvFileHandle
   );
-
 
 /**
   This service enables PEIMs to ascertain the present value of the boot mode.
@@ -223,7 +240,6 @@ GetBootMode (
   VOID
   );
 
-
 /**
   This service enables PEIMs to update the boot mode variable.
 
@@ -235,7 +251,7 @@ GetBootMode (
 EFI_STATUS
 EFIAPI
 SetBootMode (
-  IN EFI_BOOT_MODE              BootMode
+  IN EFI_BOOT_MODE  BootMode
   );
 
 /**
@@ -253,7 +269,6 @@ GetHobList (
   VOID
   );
 
-
 /**
   Updates the pointer to the HOB list.
 
@@ -263,34 +278,16 @@ GetHobList (
 EFI_STATUS
 EFIAPI
 SetHobList (
-  IN  VOID      *HobList
+  IN  VOID  *HobList
   );
 
-EFI_HOB_HANDOFF_INFO_TABLE*
+EFI_HOB_HANDOFF_INFO_TABLE *
 HobConstructor (
   IN VOID   *EfiMemoryBegin,
   IN UINTN  EfiMemoryLength,
   IN VOID   *EfiFreeMemoryBottom,
   IN VOID   *EfiFreeMemoryTop
   );
-
-/**
-  Retrieves the magic value from the PE/COFF header.
-
-  @param  Hdr             The buffer in which to return the PE32, PE32+, or TE header.
-
-  @return EFI_IMAGE_NT_OPTIONAL_HDR32_MAGIC - Image is PE32
-  @return EFI_IMAGE_NT_OPTIONAL_HDR64_MAGIC - Image is PE32+
-
-**/
-VOID
-CreateHobList (
-  IN VOID   *MemoryBegin,
-  IN UINTN  MemoryLength,
-  IN VOID   *HobBase,
-  IN VOID   *StackBase
-  );
-
 
 /**
   This service enables PEIMs to create various types of HOBs.
@@ -304,10 +301,9 @@ CreateHobList (
 **/
 VOID *
 CreateHob (
-  IN  UINT16    HobType,
-  IN  UINT16    HobLenght
+  IN  UINT16  HobType,
+  IN  UINT16  HobLenght
   );
-
 
 /**
   Returns the next instance of a HOB type from the starting HOB.
@@ -328,8 +324,8 @@ CreateHob (
 VOID *
 EFIAPI
 GetNextHob (
-  IN UINT16                 Type,
-  IN CONST VOID             *HobStart
+  IN UINT16      Type,
+  IN CONST VOID  *HobStart
   );
 
 /**
@@ -346,7 +342,7 @@ GetNextHob (
 VOID *
 EFIAPI
 GetFirstHob (
-  IN UINT16                 Type
+  IN UINT16  Type
   );
 
 /**
@@ -371,8 +367,8 @@ GetFirstHob (
 VOID *
 EFIAPI
 GetNextGuidHob (
-  IN CONST EFI_GUID         *Guid,
-  IN CONST VOID             *HobStart
+  IN CONST EFI_GUID  *Guid,
+  IN CONST VOID      *HobStart
   );
 
 /**
@@ -392,9 +388,8 @@ GetNextGuidHob (
 VOID *
 EFIAPI
 GetFirstGuidHob (
-  IN CONST EFI_GUID         *Guid
+  IN CONST EFI_GUID  *Guid
   );
-
 
 /**
   Builds a HOB for a loaded PE32 module.
@@ -414,10 +409,10 @@ GetFirstGuidHob (
 VOID
 EFIAPI
 BuildModuleHob (
-  IN CONST EFI_GUID         *ModuleName,
-  IN EFI_PHYSICAL_ADDRESS   MemoryAllocationModule,
-  IN UINT64                 ModuleLength,
-  IN EFI_PHYSICAL_ADDRESS   EntryPoint
+  IN CONST EFI_GUID        *ModuleName,
+  IN EFI_PHYSICAL_ADDRESS  MemoryAllocationModule,
+  IN UINT64                ModuleLength,
+  IN EFI_PHYSICAL_ADDRESS  EntryPoint
   );
 
 /**
@@ -464,8 +459,8 @@ BuildResourceDescriptorHob (
 VOID *
 EFIAPI
 BuildGuidHob (
-  IN CONST EFI_GUID              *Guid,
-  IN UINTN                       DataLength
+  IN CONST EFI_GUID  *Guid,
+  IN UINTN           DataLength
   );
 
 /**
@@ -491,9 +486,9 @@ BuildGuidHob (
 VOID *
 EFIAPI
 BuildGuidDataHob (
-  IN CONST EFI_GUID              *Guid,
-  IN VOID                        *Data,
-  IN UINTN                       DataLength
+  IN CONST EFI_GUID  *Guid,
+  IN VOID            *Data,
+  IN UINTN           DataLength
   );
 
 /**
@@ -511,12 +506,12 @@ BuildGuidDataHob (
 VOID
 EFIAPI
 BuildFvHob (
-  IN EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN UINT64                      Length
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINT64                Length
   );
 
 /**
-  Builds a Firmware Volume HOB and a resrouce descriptor hob
+  Builds a Firmware Volume HOB and a resource descriptor hob
 
   This function builds a Firmware Volume HOB.
   It can only be invoked during PEI phase;
@@ -535,7 +530,6 @@ BuildFvHobs (
   IN EFI_RESOURCE_ATTRIBUTE_TYPE  *ResourceAttribute  OPTIONAL
   );
 
-
 /**
   Builds a EFI_HOB_TYPE_FV2 HOB.
 
@@ -553,10 +547,10 @@ BuildFvHobs (
 VOID
 EFIAPI
 BuildFv2Hob (
-  IN          EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN          UINT64                      Length,
-  IN CONST    EFI_GUID                    *FvName,
-  IN CONST    EFI_GUID                    *FileName
+  IN          EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN          UINT64                Length,
+  IN CONST    EFI_GUID              *FvName,
+  IN CONST    EFI_GUID              *FileName
   );
 
 /**
@@ -574,8 +568,8 @@ BuildFv2Hob (
 VOID
 EFIAPI
 BuildCvHob (
-  IN EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN UINT64                      Length
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINT64                Length
   );
 
 /**
@@ -593,8 +587,8 @@ BuildCvHob (
 VOID
 EFIAPI
 BuildCpuHob (
-  IN UINT8                       SizeOfMemorySpace,
-  IN UINT8                       SizeOfIoSpace
+  IN UINT8  SizeOfMemorySpace,
+  IN UINT8  SizeOfIoSpace
   );
 
 /**
@@ -612,8 +606,8 @@ BuildCpuHob (
 VOID
 EFIAPI
 BuildStackHob (
-  IN EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN UINT64                      Length
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINT64                Length
   );
 
 /**
@@ -625,10 +619,9 @@ BuildStackHob (
 **/
 VOID
 UpdateStackHob (
-  IN EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN UINT64                      Length
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINT64                Length
   );
-
 
 /**
   Builds a HOB for the BSP store.
@@ -646,9 +639,9 @@ UpdateStackHob (
 VOID
 EFIAPI
 BuildBspStoreHob (
-  IN EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN UINT64                      Length,
-  IN EFI_MEMORY_TYPE             MemoryType
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINT64                Length,
+  IN EFI_MEMORY_TYPE       MemoryType
   );
 
 /**
@@ -667,18 +660,17 @@ BuildBspStoreHob (
 VOID
 EFIAPI
 BuildMemoryAllocationHob (
-  IN EFI_PHYSICAL_ADDRESS        BaseAddress,
-  IN UINT64                      Length,
-  IN EFI_MEMORY_TYPE             MemoryType
+  IN EFI_PHYSICAL_ADDRESS  BaseAddress,
+  IN UINT64                Length,
+  IN EFI_MEMORY_TYPE       MemoryType
   );
-
 
 VOID
 EFIAPI
 BuildExtractSectionHob (
-  IN  EFI_GUID                                  *Guid,
-  IN  EXTRACT_GUIDED_SECTION_GET_INFO_HANDLER   SectionGetInfo,
-  IN  EXTRACT_GUIDED_SECTION_DECODE_HANDLER     SectionExtraction
+  IN  EFI_GUID                                 *Guid,
+  IN  EXTRACT_GUIDED_SECTION_GET_INFO_HANDLER  SectionGetInfo,
+  IN  EXTRACT_GUIDED_SECTION_DECODE_HANDLER    SectionExtraction
   );
 
 VOID
@@ -686,7 +678,6 @@ EFIAPI
 BuildPeCoffLoaderHob (
   VOID
   );
-
 
 /**
   Allocates one or more 4KB pages of type EfiBootServicesData.
@@ -704,7 +695,26 @@ BuildPeCoffLoaderHob (
 VOID *
 EFIAPI
 AllocatePages (
-  IN UINTN            Pages
+  IN UINTN  Pages
+  );
+
+/**
+  Allocates one or more 4KB pages of type EfiRuntimeServicesData.
+
+  Allocates the number of 4KB pages of type EfiRuntimeServicesData and returns a pointer to the
+  allocated buffer.  The buffer returned is aligned on a 4KB boundary.  If Pages is 0, then NULL
+  is returned.  If there is not enough memory remaining to satisfy the request, then NULL is
+  returned.
+
+  @param  Pages                 The number of 4 KB pages to allocate.
+
+  @return A pointer to the allocated buffer or NULL if allocation fails.
+
+**/
+VOID *
+EFIAPI
+AllocateRuntimePages (
+  IN UINTN  Pages
   );
 
 /**
@@ -724,7 +734,6 @@ EFIAPI
 AllocatePool (
   IN UINTN  AllocationSize
   );
-
 
 /**
   Allocates one or more 4KB pages of type EfiBootServicesData at a specified alignment.
@@ -749,14 +758,13 @@ AllocateAlignedPages (
   IN UINTN  Alignment
   );
 
-
 EFI_STATUS
 EFIAPI
 LoadPeCoffImage (
-  IN  VOID                                      *PeCoffImage,
-  OUT EFI_PHYSICAL_ADDRESS                      *ImageAddress,
-  OUT UINT64                                    *ImageSize,
-  OUT EFI_PHYSICAL_ADDRESS                      *EntryPoint
+  IN  VOID                  *PeCoffImage,
+  OUT EFI_PHYSICAL_ADDRESS  *ImageAddress,
+  OUT UINT64                *ImageSize,
+  OUT EFI_PHYSICAL_ADDRESS  *EntryPoint
   );
 
 EFI_STATUS
@@ -769,7 +777,7 @@ LoadDxeCoreFromFfsFile (
 EFI_STATUS
 EFIAPI
 LoadDxeCoreFromFv (
-  IN UINTN  *FvInstance,   OPTIONAL
+  IN UINTN  *FvInstance    OPTIONAL,
   IN UINTN  StackSize
   );
 
@@ -778,12 +786,5 @@ EFIAPI
 DecompressFirstFv (
   VOID
   );
-
-VOID
-EFIAPI
-AddDxeCoreReportStatusCodeCallback (
-  VOID
-  );
-
 
 #endif

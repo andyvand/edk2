@@ -1,23 +1,16 @@
 /** @file
-*
-*  Copyright (c) 2011, ARM Limited. All rights reserved.
-*
-*  This program and the accompanying materials
-*  are licensed and made available under the terms and conditions of the BSD License
-*  which accompanies this distribution.  The full text of the license may be found at
-*  http://opensource.org/licenses/bsd-license.php
-*
-*  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-*  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
-*
+
+  Copyright (c) 2011, ARM Limited. All rights reserved.
+
+  SPDX-License-Identifier: BSD-2-Clause-Patent
+
 **/
 
 #include <PiPei.h>
 
 //
-// The protocols, PPI and GUID defintions for this module
+// The protocols, PPI and GUID definitions for this module
 //
-#include <Ppi/ArmGlobalVariable.h>
 #include <Ppi/MasterBootMode.h>
 #include <Ppi/BootInRecoveryMode.h>
 #include <Ppi/GuidedSectionExtraction.h>
@@ -31,8 +24,6 @@
 #include <Library/PeimEntryPoint.h>
 #include <Library/PeiServicesLib.h>
 #include <Library/PcdLib.h>
-
-#include <Guid/ArmGlobalVariableHob.h>
 
 EFI_STATUS
 EFIAPI
@@ -50,35 +41,17 @@ PlatformPeim (
 //
 // Module globals
 //
-EFI_PEI_PPI_DESCRIPTOR  mPpiListBootMode = {
+CONST EFI_PEI_PPI_DESCRIPTOR  mPpiListBootMode = {
   (EFI_PEI_PPI_DESCRIPTOR_PPI | EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST),
   &gEfiPeiMasterBootModePpiGuid,
   NULL
 };
 
-EFI_PEI_PPI_DESCRIPTOR  mPpiListRecoveryBootMode = {
+CONST EFI_PEI_PPI_DESCRIPTOR  mPpiListRecoveryBootMode = {
   (EFI_PEI_PPI_DESCRIPTOR_PPI | EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST),
   &gEfiPeiBootInRecoveryModePpiGuid,
   NULL
 };
-
-VOID
-EFIAPI
-BuildGlobalVariableHob (
-  IN EFI_PHYSICAL_ADDRESS         GlobalVariableBase,
-  IN UINT32                       GlobalVariableSize
-  )
-{
-  EFI_STATUS                Status;
-  ARM_HOB_GLOBAL_VARIABLE   *Hob;
-
-  Status = PeiServicesCreateHob (EFI_HOB_TYPE_GUID_EXTENSION, sizeof (ARM_HOB_GLOBAL_VARIABLE), (VOID**)&Hob);
-  if (!EFI_ERROR(Status)) {
-    CopyGuid (&(Hob->Header.Name), &gArmGlobalVariableGuid);
-    Hob->GlobalVariableBase = GlobalVariableBase;
-    Hob->GlobalVariableSize = GlobalVariableSize;
-  }
-}
 
 /*++
 
@@ -103,34 +76,24 @@ InitializePlatformPeim (
   IN CONST EFI_PEI_SERVICES     **PeiServices
   )
 {
-  EFI_STATUS                    Status;
-  UINTN                         BootMode;
-  ARM_GLOBAL_VARIABLE_PPI       *ArmGlobalVariablePpi;
-  EFI_PHYSICAL_ADDRESS          GlobalVariableBase;
+  EFI_STATUS     Status;
+  EFI_BOOT_MODE  BootMode;
 
-  DEBUG ((EFI_D_LOAD | EFI_D_INFO, "Platform PEIM Loaded\n"));
+  DEBUG ((DEBUG_LOAD | DEBUG_INFO, "Platform PEIM Loaded\n"));
+
+  Status = PeiServicesSetBootMode (ArmPlatformGetBootMode ());
+  ASSERT_EFI_ERROR (Status);
 
   PlatformPeim ();
 
-  Status = PeiServicesLocatePpi (&gArmGlobalVariablePpiGuid, 0, NULL, (VOID**)&ArmGlobalVariablePpi);
-  if (!EFI_ERROR(Status)) {
-    Status = ArmGlobalVariablePpi->GetGlobalVariableMemory (&GlobalVariableBase);
-
-    if (!EFI_ERROR(Status)) {
-      // Declare the Global Variable HOB
-      BuildGlobalVariableHob (GlobalVariableBase, FixedPcdGet32 (PcdPeiGlobalVariableSize));
-    }
-  }
-
-  BootMode  = ArmPlatformGetBootMode ();
-  Status    = (**PeiServices).SetBootMode (PeiServices, (UINT8) BootMode);
+  Status = PeiServicesGetBootMode (&BootMode);
   ASSERT_EFI_ERROR (Status);
 
-  Status = (**PeiServices).InstallPpi (PeiServices, &mPpiListBootMode);
+  Status = PeiServicesInstallPpi (&mPpiListBootMode);
   ASSERT_EFI_ERROR (Status);
 
   if (BootMode == BOOT_IN_RECOVERY_MODE) {
-    Status = (**PeiServices).InstallPpi (PeiServices, &mPpiListRecoveryBootMode);
+    Status = PeiServicesInstallPpi (&mPpiListRecoveryBootMode);
     ASSERT_EFI_ERROR (Status);
   }
 

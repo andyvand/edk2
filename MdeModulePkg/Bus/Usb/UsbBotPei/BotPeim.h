@@ -1,22 +1,14 @@
 /** @file
 BOT Transportation implementation.
 
-Copyright (c) 2006, Intel Corporation. All rights reserved.<BR>
-  
-This program and the accompanying materials
-are licensed and made available under the terms and conditions
-of the BSD License which accompanies this distribution.  The
-full text of the license may be found at
-http://opensource.org/licenses/bsd-license.php
+Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
 
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #ifndef _PEI_BOT_PEIM_H_
 #define _PEI_BOT_PEIM_H_
-
 
 #include <PiPei.h>
 
@@ -24,7 +16,7 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 #include <Ppi/UsbHostController.h>
 #include <Ppi/BlockIo.h>
 
-//#include <Library/DebugLib.h>
+// #include <Library/DebugLib.h>
 #include <Library/PeimEntryPoint.h>
 #include <Library/PeiServicesLib.h>
 #include <Library/BaseMemoryLib.h>
@@ -36,20 +28,20 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 // Bulk Only device protocol
 //
 typedef struct {
-  UINT32  Signature;
-  UINT32  Tag;
-  UINT32  DataTransferLength;
-  UINT8   Flags;
-  UINT8   Lun;
-  UINT8   CmdLen;
-  UINT8   CmdBlock[16];
+  UINT32    Signature;
+  UINT32    Tag;
+  UINT32    DataTransferLength;
+  UINT8     Flags;
+  UINT8     Lun;
+  UINT8     CmdLen;
+  UINT8     CmdBlock[16];
 } CBW;
 
 typedef struct {
-  UINT32  Signature;
-  UINT32  Tag;
-  UINT32  DataResidue;
-  UINT8   Status;
+  UINT32    Signature;
+  UINT32    Tag;
+  UINT32    DataResidue;
+  UINT8     Status;
 } CSW;
 
 #pragma pack()
@@ -173,7 +165,7 @@ PeiUsbRead10 (
   IN  UINTN             NumberOfBlocks
   );
 
-/**  
+/**
   Check if there is media according to sense data.
 
   @param  SenseData   Pointer to sense data.
@@ -185,11 +177,11 @@ PeiUsbRead10 (
 **/
 BOOLEAN
 IsNoMedia (
-  IN  ATAPI_REQUEST_SENSE_DATA    *SenseData,
-  IN  UINTN                 SenseCounts
+  IN  ATAPI_REQUEST_SENSE_DATA  *SenseData,
+  IN  UINTN                     SenseCounts
   );
 
-/**  
+/**
   Check if there is media error according to sense data.
 
   @param  SenseData   Pointer to sense data.
@@ -201,11 +193,11 @@ IsNoMedia (
 **/
 BOOLEAN
 IsMediaError (
-  IN  ATAPI_REQUEST_SENSE_DATA    *SenseData,
-  IN  UINTN                 SenseCounts
+  IN  ATAPI_REQUEST_SENSE_DATA  *SenseData,
+  IN  UINTN                     SenseCounts
   );
 
-/**  
+/**
   Check if media is changed according to sense data.
 
   @param  SenseData   Pointer to sense data.
@@ -217,8 +209,8 @@ IsMediaError (
 **/
 BOOLEAN
 IsMediaChange (
-  IN  ATAPI_REQUEST_SENSE_DATA    *SenseData,
-  IN  UINTN                 SenseCounts
+  IN  ATAPI_REQUEST_SENSE_DATA  *SenseData,
+  IN  UINTN                     SenseCounts
   );
 
 #endif

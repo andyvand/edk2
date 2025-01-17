@@ -1,23 +1,18 @@
 /** @file
   Dhcp6 internal data structure and definition declaration.
 
-  Copyright (c) 2009 - 2012, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2009 - 2018, Intel Corporation. All rights reserved.<BR>
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php.
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #ifndef __EFI_DHCP6_IMPL_H__
 #define __EFI_DHCP6_IMPL_H__
 
-
 #include <Uefi.h>
+
+#include <IndustryStandard/Dhcp.h>
 
 #include <Protocol/Dhcp6.h>
 #include <Protocol/Udp6.h>
@@ -35,13 +30,13 @@
 #include <Library/BaseLib.h>
 #include <Library/NetLib.h>
 #include <Library/PrintLib.h>
+#include <Guid/ZeroGuid.h>
 
-
-typedef struct _DHCP6_IA_CB    DHCP6_IA_CB;
-typedef struct _DHCP6_INF_CB   DHCP6_INF_CB;
-typedef struct _DHCP6_TX_CB    DHCP6_TX_CB;
-typedef struct _DHCP6_SERVICE  DHCP6_SERVICE;
-typedef struct _DHCP6_INSTANCE DHCP6_INSTANCE;
+typedef struct _DHCP6_IA_CB     DHCP6_IA_CB;
+typedef struct _DHCP6_INF_CB    DHCP6_INF_CB;
+typedef struct _DHCP6_TX_CB     DHCP6_TX_CB;
+typedef struct _DHCP6_SERVICE   DHCP6_SERVICE;
+typedef struct _DHCP6_INSTANCE  DHCP6_INSTANCE;
 
 #include "Dhcp6Utility.h"
 #include "Dhcp6Io.h"
@@ -50,227 +45,247 @@ typedef struct _DHCP6_INSTANCE DHCP6_INSTANCE;
 #define DHCP6_SERVICE_SIGNATURE   SIGNATURE_32 ('D', 'H', '6', 'S')
 #define DHCP6_INSTANCE_SIGNATURE  SIGNATURE_32 ('D', 'H', '6', 'I')
 
-//
-// Transmit parameters of solicit message, refers to section-5.5 of rfc-3315.
-//
-#define DHCP6_SOL_MAX_DELAY       1
-#define DHCP6_SOL_IRT             1
-#define DHCP6_SOL_MRC             0
-#define DHCP6_SOL_MRT             120
-#define DHCP6_SOL_MRD             0
-//
-// Transmit parameters of request message, refers to section-5.5 of rfc-3315.
-//
-#define DHCP6_REQ_IRT             1
-#define DHCP6_REQ_MRC             10
-#define DHCP6_REQ_MRT             30
-#define DHCP6_REQ_MRD             0
-//
-// Transmit parameters of confirm message, refers to section-5.5 of rfc-3315.
-//
-#define DHCP6_CNF_MAX_DELAY       1
-#define DHCP6_CNF_IRT             1
-#define DHCP6_CNF_MRC             0
-#define DHCP6_CNF_MRT             4
-#define DHCP6_CNF_MRD             10
-//
-// Transmit parameters of renew message, refers to section-5.5 of rfc-3315.
-//
-#define DHCP6_REN_IRT             10
-#define DHCP6_REN_MRC             0
-#define DHCP6_REN_MRT             600
-#define DHCP6_REN_MRD             0
-//
-// Transmit parameters of rebind message, refers to section-5.5 of rfc-3315.
-//
-#define DHCP6_REB_IRT             10
-#define DHCP6_REB_MRC             0
-#define DHCP6_REB_MRT             600
-#define DHCP6_REB_MRD             0
-//
-// Transmit parameters of information request message, refers to section-5.5 of rfc-3315.
-//
-#define DHCP6_INF_MAX_DELAY       1
-#define DHCP6_INF_IRT             1
-#define DHCP6_INF_MRC             0
-#define DHCP6_INF_MRT             120
-#define DHCP6_INF_MRD             0
-//
-// Transmit parameters of release message, refers to section-5.5 of rfc-3315.
-//
-#define DHCP6_REL_IRT             1
-#define DHCP6_REL_MRC             5
-#define DHCP6_REL_MRT             0
-#define DHCP6_REL_MRD             0
-//
-// Transmit parameters of decline message, refers to section-5.5 of rfc-3315.
-//
-#define DHCP6_DEC_IRT             1
-#define DHCP6_DEC_MRC             5
-#define DHCP6_DEC_MRT             0
-#define DHCP6_DEC_MRD             0
+#define DHCP6_PACKET_ALL        0
+#define DHCP6_PACKET_STATEFUL   1
+#define DHCP6_PACKET_STATELESS  2
 
-#define DHCP6_PACKET_ALL          0
-#define DHCP6_PACKET_STATEFUL     1
-#define DHCP6_PACKET_STATELESS    2
+#define DHCP6_BASE_PACKET_SIZE  1024
 
-#define DHCP6_BASE_PACKET_SIZE    1024
+#define DHCP6_PORT_CLIENT  546
+#define DHCP6_PORT_SERVER  547
 
-#define DHCP6_PORT_CLIENT         546
-#define DHCP6_PORT_SERVER         547
+#define DHCP_CHECK_MEDIA_WAITING_TIME  EFI_TIMER_PERIOD_SECONDS(20)
 
-#define DHCP6_INSTANCE_FROM_THIS(Instance) CR ((Instance), DHCP6_INSTANCE, Dhcp6, DHCP6_INSTANCE_SIGNATURE)
-#define DHCP6_SERVICE_FROM_THIS(Service)   CR ((Service), DHCP6_SERVICE, ServiceBinding, DHCP6_SERVICE_SIGNATURE)
-
-extern EFI_IPv6_ADDRESS           mAllDhcpRelayAndServersAddress;
-extern EFI_IPv6_ADDRESS           mAllDhcpServersAddress;
-extern EFI_DHCP6_PROTOCOL         gDhcp6ProtocolTemplate;
+#define DHCP6_INSTANCE_FROM_THIS(Instance)  CR ((Instance), DHCP6_INSTANCE, Dhcp6, DHCP6_INSTANCE_SIGNATURE)
+#define DHCP6_SERVICE_FROM_THIS(Service)    CR ((Service), DHCP6_SERVICE, ServiceBinding, DHCP6_SERVICE_SIGNATURE)
 
 //
-// Enumeration of Dhcp6 message type, refers to section-5.3 of rfc-3315.
+// For more information on DHCP options see RFC 8415, Section 21.1
 //
-typedef enum {
-  Dhcp6MsgSolicit               = 1,
-  Dhcp6MsgAdvertise             = 2,
-  Dhcp6MsgRequest               = 3,
-  Dhcp6MsgConfirm               = 4,
-  Dhcp6MsgRenew                 = 5,
-  Dhcp6MsgRebind                = 6,
-  Dhcp6MsgReply                 = 7,
-  Dhcp6MsgRelease               = 8,
-  Dhcp6MsgDecline               = 9,
-  Dhcp6MsgReconfigure           = 10,
-  Dhcp6MsgInfoRequest           = 11
-} DHCP6_MSG_TYPE;
+// The format of DHCP options is:
+//
+//     0                   1                   2                   3
+//     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//    |          option-code          |           option-len          |
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//    |                          option-data                          |
+//    |                      (option-len octets)                      |
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//
+#define DHCP6_SIZE_OF_OPT_CODE  (sizeof (((EFI_DHCP6_PACKET_OPTION *)0)->OpCode))
+#define DHCP6_SIZE_OF_OPT_LEN   (sizeof (((EFI_DHCP6_PACKET_OPTION *)0)->OpLen))
+
+// Combined size of Code and Length
+#define DHCP6_SIZE_OF_COMBINED_CODE_AND_LEN  (DHCP6_SIZE_OF_OPT_CODE + \
+                                              DHCP6_SIZE_OF_OPT_LEN)
+
+STATIC_ASSERT (
+  DHCP6_SIZE_OF_COMBINED_CODE_AND_LEN == 4,
+  "Combined size of Code and Length must be 4 per RFC 8415"
+  );
+
+// Offset to the length is just past the code
+#define DHCP6_OFFSET_OF_OPT_LEN(a)  (a + DHCP6_SIZE_OF_OPT_CODE)
+STATIC_ASSERT (
+  DHCP6_OFFSET_OF_OPT_LEN (0) == 2,
+  "Offset of length is + 2 past start of option"
+  );
+
+#define DHCP6_OFFSET_OF_OPT_DATA(a)  (a + DHCP6_SIZE_OF_COMBINED_CODE_AND_LEN)
+STATIC_ASSERT (
+  DHCP6_OFFSET_OF_OPT_DATA (0) == 4,
+  "Offset to option data should be +4 from start of option"
+  );
+//
+// Identity Association options (both NA (Non-Temporary) and TA (Temporary Association))
+// are defined in RFC 8415 and are a deriviation of a TLV stucture
+// For more information on IA_NA see Section 21.4
+// For more information on IA_TA see Section 21.5
+//
+//
+//  The format of IA_NA and IA_TA option:
+//
+//     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//    |          OPTION_IA_NA         |          option-len           |
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//    |                        IAID (4 octets)                        |
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//    |                        T1 (only for IA_NA)                    |
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//    |                        T2 (only for IA_NA)                    |
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//    |                                                               |
+//    .                  IA_NA-options/IA_TA-options                  .
+//    .                                                               .
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//
+#define DHCP6_SIZE_OF_IAID           (sizeof(UINT32))
+#define DHCP6_SIZE_OF_TIME_INTERVAL  (sizeof(UINT32))
+
+// Combined size of IAID, T1, and T2
+#define DHCP6_SIZE_OF_COMBINED_IAID_T1_T2  (DHCP6_SIZE_OF_IAID +  \
+                                            DHCP6_SIZE_OF_TIME_INTERVAL + \
+                                            DHCP6_SIZE_OF_TIME_INTERVAL)
+STATIC_ASSERT (
+  DHCP6_SIZE_OF_COMBINED_IAID_T1_T2 == 12,
+  "Combined size of IAID, T1, T2 must be 12 per RFC 8415"
+  );
+
+// This is the size of IA_TA without options
+#define DHCP6_MIN_SIZE_OF_IA_TA  (DHCP6_SIZE_OF_COMBINED_CODE_AND_LEN + \
+                                  DHCP6_SIZE_OF_IAID)
+STATIC_ASSERT (
+  DHCP6_MIN_SIZE_OF_IA_TA == 8,
+  "Minimum combined size of IA_TA per RFC 8415"
+  );
+
+// Offset to a IA_TA inner option
+#define DHCP6_OFFSET_OF_IA_TA_INNER_OPT(a)  (a + DHCP6_MIN_SIZE_OF_IA_TA)
+STATIC_ASSERT (
+  DHCP6_OFFSET_OF_IA_TA_INNER_OPT (0) == 8,
+  "Offset of IA_TA Inner option is + 8 past start of option"
+  );
+
+// This is the size of IA_NA without options (16)
+#define DHCP6_MIN_SIZE_OF_IA_NA  DHCP6_SIZE_OF_COMBINED_CODE_AND_LEN + \
+                                 DHCP6_SIZE_OF_COMBINED_IAID_T1_T2
+STATIC_ASSERT (
+  DHCP6_MIN_SIZE_OF_IA_NA == 16,
+  "Minimum combined size of IA_TA per RFC 8415"
+  );
+
+#define DHCP6_OFFSET_OF_IA_NA_INNER_OPT(a)  (a + DHCP6_MIN_SIZE_OF_IA_NA)
+STATIC_ASSERT (
+  DHCP6_OFFSET_OF_IA_NA_INNER_OPT (0) == 16,
+  "Offset of IA_NA Inner option is + 16 past start of option"
+  );
+
+#define DHCP6_OFFSET_OF_IA_NA_T1(a)  (a + \
+                                   DHCP6_SIZE_OF_COMBINED_CODE_AND_LEN + \
+                                   DHCP6_SIZE_OF_IAID)
+STATIC_ASSERT (
+  DHCP6_OFFSET_OF_IA_NA_T1 (0) == 8,
+  "Offset of IA_NA Inner option is + 8 past start of option"
+  );
+
+#define DHCP6_OFFSET_OF_IA_NA_T2(a)  (a + \
+                                   DHCP6_SIZE_OF_COMBINED_CODE_AND_LEN +\
+                                   DHCP6_SIZE_OF_IAID + \
+                                   DHCP6_SIZE_OF_TIME_INTERVAL)
+STATIC_ASSERT (
+  DHCP6_OFFSET_OF_IA_NA_T2 (0) == 12,
+  "Offset of IA_NA Inner option is + 12 past start of option"
+  );
 
 //
-// Enumeration of option code in Dhcp6 packet, refers to section-24.3 of rfc-3315.
+// For more information see RFC 8415 Section 21.13
 //
-typedef enum {
-  Dhcp6OptClientId              = 1,
-  Dhcp6OptServerId              = 2,
-  Dhcp6OptIana                  = 3,
-  Dhcp6OptIata                  = 4,
-  Dhcp6OptIaAddr                = 5,
-  Dhcp6OptRequestOption         = 6,
-  Dhcp6OptPreference            = 7,
-  Dhcp6OptElapsedTime           = 8,
-  Dhcp6OptReplayMessage         = 9,
-  Dhcp6OptAuthentication        = 11,
-  Dhcp6OptServerUnicast         = 12,
-  Dhcp6OptStatusCode            = 13,
-  Dhcp6OptRapidCommit           = 14,
-  Dhcp6OptUserClass             = 15,
-  Dhcp6OptVendorClass           = 16,
-  Dhcp6OptVendorInfo            = 17,
-  Dhcp6OptInterfaceId           = 18,
-  Dhcp6OptReconfigMessage       = 19,
-  Dhcp6OptReconfigureAccept     = 20
-} DHCP6_OPT_CODE;
+// The format of the Status Code Option:
+//
+//     0                   1                   2                   3
+//     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//    |       OPTION_STATUS_CODE      |         option-len            |
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//    |          status-code          |                               |
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+                               |
+//    .                                                               .
+//    .                        status-message                         .
+//    .                                                               .
+//    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//
+#define DHCP6_OFFSET_OF_STATUS_CODE(a)  (a + DHCP6_SIZE_OF_COMBINED_CODE_AND_LEN)
+STATIC_ASSERT (
+  DHCP6_OFFSET_OF_STATUS_CODE (0) == 4,
+  "Offset of status is + 4 past start of option"
+  );
 
-//
-// Enumeration of status code recorded by IANA, refers to section-24.4 of rfc-3315.
-//
-typedef enum {
-  Dhcp6StsSuccess               = 0,
-  Dhcp6StsUnspecFail            = 1,
-  Dhcp6StsNoAddrsAvail          = 2,
-  Dhcp6StsNoBinding             = 3,
-  Dhcp6StsNotOnLink             = 4,
-  Dhcp6StsUseMulticast          = 5
-} DHCP6_STS_CODE;
-
-//
-// Enumeration of Duid type recorded by IANA, refers to section-24.5 of rfc-3315.
-//
-typedef enum {
-  Dhcp6DuidTypeLlt              = 1,
-  Dhcp6DuidTypeEn               = 2,
-  Dhcp6DuidTypeLl               = 3,
-  Dhcp6DuidTypeUuid             = 4
-} DHCP6_DUID_TYPE;
+extern EFI_IPv6_ADDRESS    mAllDhcpRelayAndServersAddress;
+extern EFI_DHCP6_PROTOCOL  gDhcp6ProtocolTemplate;
 
 //
 // Control block for each IA.
 //
 struct _DHCP6_IA_CB {
-  EFI_DHCP6_IA                  *Ia;
-  UINT32                        T1;
-  UINT32                        T2;
-  UINT32                        AllExpireTime;
-  UINT32                        LeaseTime;
+  EFI_DHCP6_IA    *Ia;
+  UINT32          T1;
+  UINT32          T2;
+  UINT32          AllExpireTime;
+  UINT32          LeaseTime;
 };
 
 //
 // Control block for each transmitted message.
 //
 struct _DHCP6_TX_CB {
-  LIST_ENTRY                    Link;
-  UINT32                        Xid;
-  EFI_DHCP6_PACKET              *TxPacket;
-  EFI_DHCP6_RETRANSMISSION      RetryCtl;
-  UINT32                        RetryCnt;
-  UINT32                        RetryExp;
-  UINT32                        RetryLos;
-  UINT32                        TickTime;
-  UINT16                        *Elapsed;
-  BOOLEAN                       SolicitRetry;
+  LIST_ENTRY                  Link;
+  UINT32                      Xid;
+  EFI_DHCP6_PACKET            *TxPacket;
+  EFI_DHCP6_RETRANSMISSION    RetryCtl;
+  UINT32                      RetryCnt;
+  UINT32                      RetryExp;
+  UINT32                      RetryLos;
+  UINT32                      TickTime;
+  UINT16                      *Elapsed;
+  BOOLEAN                     SolicitRetry;
 };
 
 //
 // Control block for each info-request message.
 //
 struct _DHCP6_INF_CB {
-  LIST_ENTRY                    Link;
-  UINT32                        Xid;
-  EFI_DHCP6_INFO_CALLBACK       ReplyCallback;
-  VOID                          *CallbackContext;
-  EFI_EVENT                     TimeoutEvent;
+  LIST_ENTRY                 Link;
+  UINT32                     Xid;
+  EFI_DHCP6_INFO_CALLBACK    ReplyCallback;
+  VOID                       *CallbackContext;
+  EFI_EVENT                  TimeoutEvent;
 };
 
 //
 // Control block for Dhcp6 instance, it's per configuration data.
 //
 struct _DHCP6_INSTANCE {
-  UINT32                        Signature;
-  EFI_HANDLE                    Handle;
-  DHCP6_SERVICE                 *Service;
-  LIST_ENTRY                    Link;
-  EFI_DHCP6_PROTOCOL            Dhcp6;
-  EFI_EVENT                     Timer;
-  EFI_DHCP6_CONFIG_DATA         *Config;
-  EFI_DHCP6_IA                  *CacheIa;
-  DHCP6_IA_CB                   IaCb;
-  LIST_ENTRY                    TxList;
-  LIST_ENTRY                    InfList;
-  EFI_DHCP6_PACKET              *AdSelect;
-  UINT8                         AdPref;
-  EFI_IPv6_ADDRESS              *Unicast;
-  volatile EFI_STATUS           UdpSts;
-  BOOLEAN                       InDestroy;
-  BOOLEAN                       MediaPresent;
+  UINT32                   Signature;
+  EFI_HANDLE               Handle;
+  DHCP6_SERVICE            *Service;
+  LIST_ENTRY               Link;
+  EFI_DHCP6_PROTOCOL       Dhcp6;
+  EFI_EVENT                Timer;
+  EFI_DHCP6_CONFIG_DATA    *Config;
+  EFI_DHCP6_IA             *CacheIa;
+  DHCP6_IA_CB              IaCb;
+  LIST_ENTRY               TxList;
+  LIST_ENTRY               InfList;
+  EFI_DHCP6_PACKET         *AdSelect;
+  UINT8                    AdPref;
+  EFI_IPv6_ADDRESS         *Unicast;
+  volatile EFI_STATUS      UdpSts;
+  BOOLEAN                  InDestroy;
+  BOOLEAN                  MediaPresent;
   //
   // StartTime is used to calculate the 'elapsed-time' option. Refer to RFC3315,
-  // the elapsed-time is amount of time since the client began its current DHCP transaction. 
+  // the elapsed-time is amount of time since the client began its current DHCP transaction.
   //
-  UINT64                        StartTime;
+  UINT64                   StartTime;
 };
 
 //
 // Control block for Dhcp6 service, it's per Nic handle.
 //
 struct _DHCP6_SERVICE {
-  UINT32                        Signature;
-  EFI_HANDLE                    Controller;
-  EFI_HANDLE                    Image;
-  EFI_SERVICE_BINDING_PROTOCOL  ServiceBinding;
-  EFI_SIMPLE_NETWORK_PROTOCOL   *Snp;
-  EFI_IP6_CONFIG_PROTOCOL       *Ip6Cfg;
-  EFI_DHCP6_DUID                *ClientId;
-  UDP_IO                        *UdpIo;
-  UINT32                        Xid;
-  LIST_ENTRY                    Child;
-  UINTN                         NumOfChild;
+  UINT32                          Signature;
+  EFI_HANDLE                      Controller;
+  EFI_HANDLE                      Image;
+  EFI_SERVICE_BINDING_PROTOCOL    ServiceBinding;
+  EFI_SIMPLE_NETWORK_PROTOCOL     *Snp;
+  EFI_IP6_CONFIG_PROTOCOL         *Ip6Cfg;
+  EFI_DHCP6_DUID                  *ClientId;
+  UDP_IO                          *UdpIo;
+  UINT32                          Xid;
+  LIST_ENTRY                      Child;
+  UINTN                           NumOfChild;
 };
 
 /**
@@ -305,7 +320,7 @@ struct _DHCP6_SERVICE {
 EFI_STATUS
 EFIAPI
 EfiDhcp6Start (
-  IN EFI_DHCP6_PROTOCOL        *This
+  IN EFI_DHCP6_PROTOCOL  *This
   );
 
 /**
@@ -326,7 +341,7 @@ EfiDhcp6Start (
 EFI_STATUS
 EFIAPI
 EfiDhcp6Stop (
-  IN EFI_DHCP6_PROTOCOL        *This
+  IN EFI_DHCP6_PROTOCOL  *This
   );
 
 /**
@@ -348,9 +363,9 @@ EfiDhcp6Stop (
 EFI_STATUS
 EFIAPI
 EfiDhcp6GetModeData (
-  IN  EFI_DHCP6_PROTOCOL       *This,
-  OUT EFI_DHCP6_MODE_DATA      *Dhcp6ModeData      OPTIONAL,
-  OUT EFI_DHCP6_CONFIG_DATA    *Dhcp6ConfigData    OPTIONAL
+  IN  EFI_DHCP6_PROTOCOL     *This,
+  OUT EFI_DHCP6_MODE_DATA    *Dhcp6ModeData      OPTIONAL,
+  OUT EFI_DHCP6_CONFIG_DATA  *Dhcp6ConfigData    OPTIONAL
   );
 
 /**
@@ -385,8 +400,8 @@ EfiDhcp6GetModeData (
 EFI_STATUS
 EFIAPI
 EfiDhcp6Configure (
-  IN EFI_DHCP6_PROTOCOL        *This,
-  IN EFI_DHCP6_CONFIG_DATA     *Dhcp6CfgData    OPTIONAL
+  IN EFI_DHCP6_PROTOCOL     *This,
+  IN EFI_DHCP6_CONFIG_DATA  *Dhcp6CfgData    OPTIONAL
   );
 
 /**
@@ -492,8 +507,8 @@ EfiDhcp6InfoRequest (
 EFI_STATUS
 EFIAPI
 EfiDhcp6RenewRebind (
-  IN EFI_DHCP6_PROTOCOL        *This,
-  IN BOOLEAN                   RebindRequest
+  IN EFI_DHCP6_PROTOCOL  *This,
+  IN BOOLEAN             RebindRequest
   );
 
 /**
@@ -531,9 +546,9 @@ EfiDhcp6RenewRebind (
 EFI_STATUS
 EFIAPI
 EfiDhcp6Decline (
-  IN EFI_DHCP6_PROTOCOL        *This,
-  IN UINT32                    AddressCount,
-  IN EFI_IPv6_ADDRESS          *Addresses
+  IN EFI_DHCP6_PROTOCOL  *This,
+  IN UINT32              AddressCount,
+  IN EFI_IPv6_ADDRESS    *Addresses
   );
 
 /**
@@ -572,9 +587,9 @@ EfiDhcp6Decline (
 EFI_STATUS
 EFIAPI
 EfiDhcp6Release (
-  IN EFI_DHCP6_PROTOCOL        *This,
-  IN UINT32                    AddressCount,
-  IN EFI_IPv6_ADDRESS          *Addresses
+  IN EFI_DHCP6_PROTOCOL  *This,
+  IN UINT32              AddressCount,
+  IN EFI_IPv6_ADDRESS    *Addresses
   );
 
 /**

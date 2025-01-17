@@ -2,13 +2,7 @@
 
   Copyright (c) 2013-2014, ARM Ltd. All rights reserved.<BR>
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -17,7 +11,7 @@
 
 #include <IndustryStandard/Usb.h>
 
-extern EFI_GUID gUsbDeviceProtocolGuid;
+extern EFI_GUID  gUsbDeviceProtocolGuid;
 
 /*
  * Note: This Protocol is just  the bare minimum for Android Fastboot. It
@@ -36,8 +30,8 @@ extern EFI_GUID gUsbDeviceProtocolGuid;
 typedef
 VOID
 (*USB_DEVICE_RX_CALLBACK) (
-  IN UINTN    Size,
-  IN VOID    *Buffer
+  IN UINTN  Size,
+  IN VOID   *Buffer
   );
 
 /*
@@ -52,7 +46,7 @@ VOID
 typedef
 VOID
 (*USB_DEVICE_TX_CALLBACK) (
-  IN UINT8    EndpointIndex
+  IN UINT8  EndpointIndex
   );
 
 /*
@@ -70,9 +64,9 @@ VOID
 typedef
 EFI_STATUS
 (*USB_DEVICE_SEND) (
-  IN       UINT8    EndpointIndex,
-  IN       UINTN    Size,
-  IN CONST VOID    *Buffer
+  IN       UINT8  EndpointIndex,
+  IN       UINTN  Size,
+  IN CONST VOID   *Buffer
   );
 
 /*
@@ -102,15 +96,15 @@ EFI_STATUS
 typedef
 EFI_STATUS
 (*USB_DEVICE_START) (
-  IN USB_DEVICE_DESCRIPTOR     *DeviceDescriptor,
-  IN VOID                     **Descriptors,
-  IN USB_DEVICE_RX_CALLBACK     RxCallback,
-  IN USB_DEVICE_TX_CALLBACK     TxCallback
+  IN USB_DEVICE_DESCRIPTOR   *DeviceDescriptor,
+  IN VOID                    **Descriptors,
+  IN USB_DEVICE_RX_CALLBACK  RxCallback,
+  IN USB_DEVICE_TX_CALLBACK  TxCallback
   );
 
 struct _USB_DEVICE_PROTOCOL {
-  USB_DEVICE_START Start;
-  USB_DEVICE_SEND  Send;
+  USB_DEVICE_START    Start;
+  USB_DEVICE_SEND     Send;
 };
 
 typedef struct _USB_DEVICE_PROTOCOL USB_DEVICE_PROTOCOL;

@@ -2,14 +2,8 @@
   Produce the UEFI boot service GetNextMonotonicCount() and runtime service
   GetNextHighMonotonicCount().
 
-Copyright (c) 2006 - 2011, Intel Corporation. All rights reserved.<BR>
-This program and the accompanying materials
-are licensed and made available under the terms and conditions of the BSD License
-which accompanies this distribution.  The full text of the license may be found at
-http://opensource.org/licenses/bsd-license.php
-
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -33,12 +27,12 @@ EFI_HANDLE  mMonotonicCounterHandle = NULL;
 //
 // The current monotonic counter value
 //
-UINT64      mEfiMtc;
+UINT64  mEfiMtc;
 
 //
 // Event to update the monotonic Counter's high part when low part overflows.
 //
-EFI_EVENT   mEfiMtcEvent;
+EFI_EVENT  mEfiMtcEvent;
 
 /**
   Returns a monotonically increasing count for the platform.
@@ -51,7 +45,7 @@ EFI_EVENT   mEfiMtcEvent;
   The high 32-bit value is nonvolatile and is increased by one on whenever the
   system resets or the low 32-bit counter overflows.
 
-  @param  Count	                Pointer to returned value.
+  @param  Count                  Pointer to returned value.
 
   @retval EFI_SUCCESS           The next monotonic count was returned.
   @retval EFI_DEVICE_ERROR      The device is not functioning properly.
@@ -65,7 +59,7 @@ MonotonicCounterDriverGetNextMonotonicCount (
   OUT UINT64  *Count
   )
 {
-  EFI_TPL OldTpl;
+  EFI_TPL  OldTpl;
 
   //
   // Cannot be called after ExitBootServices()
@@ -73,17 +67,19 @@ MonotonicCounterDriverGetNextMonotonicCount (
   if (EfiAtRuntime ()) {
     return EFI_UNSUPPORTED;
   }
+
   //
   // Check input parameters
   //
   if (Count == NULL) {
     return EFI_INVALID_PARAMETER;
   }
+
   //
   // Update the monotonic counter with a lock
   //
-  OldTpl  = gBS->RaiseTPL (TPL_HIGH_LEVEL);
-  *Count  = mEfiMtc;
+  OldTpl = gBS->RaiseTPL (TPL_HIGH_LEVEL);
+  *Count = mEfiMtc;
   mEfiMtc++;
   gBS->RestoreTPL (OldTpl);
 
@@ -91,13 +87,12 @@ MonotonicCounterDriverGetNextMonotonicCount (
   // If the low 32-bit counter overflows (MSB bit toggled),
   // then signal that the high part needs update now.
   //
-  if ((((UINT32) mEfiMtc) ^ ((UINT32) *Count)) & BIT31) {
+  if ((((UINT32)mEfiMtc) ^ ((UINT32)*Count)) & BIT31) {
     gBS->SignalEvent (mEfiMtcEvent);
   }
 
   return EFI_SUCCESS;
 }
-
 
 /**
   Returns the next high 32 bits of the platform's monotonic counter.
@@ -107,8 +102,9 @@ MonotonicCounterDriverGetNextMonotonicCount (
   comprised of two 32 bit quantities:  the high 32 bits and the low 32 bits.
   During boot service time the low 32 bit value is volatile:  it is reset to
   zero on every system reset and is increased by 1 on every call to GetNextMonotonicCount().
-  The high 32 bit value is non-volatile and is increased by 1 whenever the system resets
-  or whenever the low 32 bit count [returned by GetNextMonoticCount()] overflows.
+  The high 32 bit value is non-volatile and is increased by 1 whenever the system resets,
+  whenever GetNextHighMonotonicCount() is called, or whenever the low 32 bit count
+  (returned by GetNextMonoticCount()) overflows.
   The GetNextMonotonicCount() function is only available at boot services time.
   If the operating system wishes to extend the platform monotonic counter to runtime,
   it may do so by utilizing GetNextHighMonotonicCount().  To do this, before calling
@@ -122,13 +118,16 @@ MonotonicCounterDriverGetNextMonotonicCount (
 
   This function may only be called at Runtime.
 
-  @param  HighCount	            Pointer to returned value.
+  @param  HighCount              Pointer to returned value.
 
   @retval EFI_SUCCESS           The next high monotonic count was returned.
   @retval EFI_INVALID_PARAMETER HighCount is NULL.
   @retval EFI_DEVICE_ERROR      The variable could not be saved due to a hardware failure.
   @retval EFI_OUT_OF_RESOURCES  If variable service reports that not enough storage
                                 is available to hold the variable and its data.
+  @retval EFI_UNSUPPORTED       This call is not supported by this platform at the time the call is made.
+                                The platform should describe this runtime service as unsupported at runtime
+                                via an EFI_RT_PROPERTIES_TABLE configuration table.
 
 **/
 EFI_STATUS
@@ -137,7 +136,7 @@ MonotonicCounterDriverGetNextHighMonotonicCount (
   OUT UINT32  *HighCount
   )
 {
-  EFI_TPL     OldTpl;
+  EFI_TPL  OldTpl;
 
   //
   // Check input parameters
@@ -150,14 +149,15 @@ MonotonicCounterDriverGetNextHighMonotonicCount (
     //
     // Use a lock if called before ExitBootServices()
     //
-    OldTpl      = gBS->RaiseTPL (TPL_HIGH_LEVEL);
-    *HighCount  = (UINT32) RShiftU64 (mEfiMtc, 32) + 1;
-    mEfiMtc     = LShiftU64 (*HighCount, 32);
+    OldTpl     = gBS->RaiseTPL (TPL_HIGH_LEVEL);
+    *HighCount = (UINT32)RShiftU64 (mEfiMtc, 32) + 1;
+    mEfiMtc    = LShiftU64 (*HighCount, 32);
     gBS->RestoreTPL (OldTpl);
   } else {
-    *HighCount  = (UINT32) RShiftU64 (mEfiMtc, 32) + 1;
-    mEfiMtc     = LShiftU64 (*HighCount, 32);
+    *HighCount = (UINT32)RShiftU64 (mEfiMtc, 32) + 1;
+    mEfiMtc    = LShiftU64 (*HighCount, 32);
   }
+
   //
   // Update the NV variable to match the new high part
   //
@@ -168,7 +168,6 @@ MonotonicCounterDriverGetNextHighMonotonicCount (
            sizeof (UINT32),
            HighCount
            );
-
 }
 
 /**
@@ -181,8 +180,8 @@ MonotonicCounterDriverGetNextHighMonotonicCount (
 VOID
 EFIAPI
 EfiMtcEventHandler (
-  IN EFI_EVENT                Event,
-  IN VOID                     *Context
+  IN EFI_EVENT  Event,
+  IN VOID       *Context
   )
 {
   UINT32  HighCount;
@@ -231,16 +230,17 @@ MonotonicCounterDriverInitialize (
   // Read the last high part
   //
   BufferSize = sizeof (UINT32);
-  Status = EfiGetVariable (
-             MTC_VARIABLE_NAME,
-             &gMtcVendorGuid,
-             NULL,
-             &BufferSize,
-             &HighCount
-             );
+  Status     = EfiGetVariable (
+                 MTC_VARIABLE_NAME,
+                 &gMtcVendorGuid,
+                 NULL,
+                 &BufferSize,
+                 &HighCount
+                 );
   if (EFI_ERROR (Status)) {
     HighCount = 0;
   }
+
   //
   // Set the current value
   //
@@ -256,8 +256,8 @@ MonotonicCounterDriverInitialize (
   //
   // Fill in the EFI Boot Services and EFI Runtime Services Monotonic Counter Fields
   //
-  gBS->GetNextMonotonicCount      = MonotonicCounterDriverGetNextMonotonicCount;
-  gRT->GetNextHighMonotonicCount  = MonotonicCounterDriverGetNextHighMonotonicCount;
+  gBS->GetNextMonotonicCount     = MonotonicCounterDriverGetNextMonotonicCount;
+  gRT->GetNextHighMonotonicCount = MonotonicCounterDriverGetNextHighMonotonicCount;
 
   //
   // Install the Monotonic Counter Architctural Protocol onto a new handle

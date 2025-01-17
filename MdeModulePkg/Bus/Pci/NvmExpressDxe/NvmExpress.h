@@ -2,14 +2,10 @@
   NvmExpressDxe driver is used to manage non-volatile memory subsystem which follows
   NVM Express specification.
 
-  Copyright (c) 2013 - 2015, Intel Corporation. All rights reserved.<BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php.
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  (C) Copyright 2016 Hewlett Packard Enterprise Development LP<BR>
+  Copyright (c) 2013 - 2019, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) Microsoft Corporation.<BR>
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -19,6 +15,7 @@
 #include <Uefi.h>
 
 #include <IndustryStandard/Pci.h>
+#include <IndustryStandard/Nvme.h>
 
 #include <Protocol/ComponentName.h>
 #include <Protocol/ComponentName2.h>
@@ -28,9 +25,12 @@
 #include <Protocol/PciIo.h>
 #include <Protocol/NvmExpressPassthru.h>
 #include <Protocol/BlockIo.h>
+#include <Protocol/BlockIo2.h>
 #include <Protocol/DiskInfo.h>
 #include <Protocol/DriverSupportedEfiVersion.h>
 #include <Protocol/StorageSecurityCommand.h>
+#include <Protocol/ResetNotification.h>
+#include <Protocol/MediaSanitize.h>
 
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
@@ -41,100 +41,157 @@
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiDriverEntryPoint.h>
+#include <Library/ReportStatusCodeLib.h>
 
-typedef struct _NVME_CONTROLLER_PRIVATE_DATA NVME_CONTROLLER_PRIVATE_DATA;
-typedef struct _NVME_DEVICE_PRIVATE_DATA     NVME_DEVICE_PRIVATE_DATA;
+#include <Guid/NVMeEventGroup.h>
+
+typedef struct _NVME_CONTROLLER_PRIVATE_DATA  NVME_CONTROLLER_PRIVATE_DATA;
+typedef struct _NVME_DEVICE_PRIVATE_DATA      NVME_DEVICE_PRIVATE_DATA;
 
 #include "NvmExpressBlockIo.h"
 #include "NvmExpressDiskInfo.h"
 #include "NvmExpressHci.h"
+#include "NvmExpressMediaSanitize.h"
 
 extern EFI_DRIVER_BINDING_PROTOCOL                gNvmExpressDriverBinding;
 extern EFI_COMPONENT_NAME_PROTOCOL                gNvmExpressComponentName;
 extern EFI_COMPONENT_NAME2_PROTOCOL               gNvmExpressComponentName2;
 extern EFI_DRIVER_SUPPORTED_EFI_VERSION_PROTOCOL  gNvmExpressDriverSupportedEfiVersion;
 
-#define PCI_CLASS_MASS_STORAGE_NVM                0x08  // mass storage sub-class non-volatile memory.
-#define PCI_IF_NVMHCI                             0x02  // mass storage programming interface NVMHCI.
+#define PCI_CLASS_MASS_STORAGE_NVM  0x08                // mass storage sub-class non-volatile memory.
+#define PCI_IF_NVMHCI               0x02                // mass storage programming interface NVMHCI.
 
-#define NVME_ASQ_SIZE                             1     // Number of admin submission queue entries, which is 0-based
-#define NVME_ACQ_SIZE                             1     // Number of admin completion queue entries, which is 0-based
+#define NVME_ASQ_SIZE  1                                // Number of admin submission queue entries, which is 0-based
+#define NVME_ACQ_SIZE  1                                // Number of admin completion queue entries, which is 0-based
 
-#define NVME_CSQ_SIZE                             1     // Number of I/O submission queue entries, which is 0-based
-#define NVME_CCQ_SIZE                             1     // Number of I/O completion queue entries, which is 0-based
+#define NVME_CSQ_SIZE  1                                // Number of I/O submission queue entries, which is 0-based
+#define NVME_CCQ_SIZE  1                                // Number of I/O completion queue entries, which is 0-based
 
-#define NVME_MAX_QUEUES                           2     // Number of queues supported by the driver
+//
+// Number of asynchronous I/O submission queue entries, which is 0-based.
+// The asynchronous I/O submission queue size is 4kB in total.
+//
+#define NVME_ASYNC_CSQ_SIZE  63
+//
+// Number of asynchronous I/O completion queue entries, which is 0-based.
+// The asynchronous I/O completion queue size is 4kB in total.
+//
+#define NVME_ASYNC_CCQ_SIZE  255
 
-#define NVME_CONTROLLER_ID                        0
+#define NVME_MAX_QUEUES  3                              // Number of queues supported by the driver
+
+//
+// FormatNVM Admin Command LBA Format (LBAF) Mask
+//
+#define NVME_LBA_FORMATNVM_LBAF_MASK  0xF
+
+//
+// NVMe Completion Queue Entry Bits, Fields, Masks
+//
+#define NVME_CQE_STATUS_FIELD_MASK                       0xFFFF0000
+#define NVME_CQE_STATUS_FIELD_OFFSET                     16
+#define NVME_CQE_STATUS_FIELD_SCT_MASK                   0x0E00
+#define NVME_CQE_STATUS_FIELD_SCT_OFFSET                 0x9
+#define NVME_CQE_STATUS_FIELD_SC_MASK                    0x1FE
+#define NVME_CQE_STATUS_FIELD_SC_OFFSET                  0x01
+#define NVME_CQE_SCT_GENERIC_CMD_STATUS                  0x0
+#define NVME_CQE_SCT_CMD_SPECIFIC_STATUS                 0x1
+#define NVME_CQE_SCT_MEDIA_DATA_INTEGRITY_ERRORS_STATUS  0x2
+#define NVME_CQE_SCT_PATH_RELATED_STATUS                 0x3
+#define NVME_CQE_SC_SUCCESSFUL_COMPLETION                0x00
+#define NVME_CQE_SC_INVALID_CMD_OPCODE                   0x01
+#define NVME_CQE_SC_INVALID_FIELD_IN_CMD                 0x02
+
+#define NVME_ALL_NAMESPACES  0xFFFFFFFF
+
+#define NVME_CONTROLLER_ID  0
 
 //
 // Time out value for Nvme transaction execution
 //
-#define NVME_GENERIC_TIMEOUT                      EFI_TIMER_PERIOD_SECONDS (5)
+#define NVME_GENERIC_TIMEOUT  EFI_TIMER_PERIOD_SECONDS (5)
+
+//
+// Nvme async transfer timer interval, set by experience.
+//
+#define NVME_HC_ASYNC_TIMER  EFI_TIMER_PERIOD_MILLISECONDS (1)
 
 //
 // Unique signature for private data structure.
 //
-#define NVME_CONTROLLER_PRIVATE_DATA_SIGNATURE    SIGNATURE_32 ('N','V','M','E')
+#define NVME_CONTROLLER_PRIVATE_DATA_SIGNATURE  SIGNATURE_32 ('N','V','M','E')
 
 //
 // Nvme private data structure.
 //
 struct _NVME_CONTROLLER_PRIVATE_DATA {
-  UINT32                              Signature;
+  UINT32                                Signature;
 
-  EFI_HANDLE                          ControllerHandle;
-  EFI_HANDLE                          ImageHandle;
-  EFI_HANDLE                          DriverBindingHandle;
+  EFI_HANDLE                            ControllerHandle;
+  EFI_HANDLE                            ImageHandle;
+  EFI_HANDLE                            DriverBindingHandle;
 
-  EFI_PCI_IO_PROTOCOL                 *PciIo;
-  UINT64                              PciAttributes;
+  EFI_PCI_IO_PROTOCOL                   *PciIo;
+  UINT64                                PciAttributes;
 
-  EFI_DEVICE_PATH_PROTOCOL            *ParentDevicePath;
+  EFI_DEVICE_PATH_PROTOCOL              *ParentDevicePath;
 
-  EFI_NVM_EXPRESS_PASS_THRU_MODE      PassThruMode;
-  EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL  Passthru;
+  EFI_NVM_EXPRESS_PASS_THRU_MODE        PassThruMode;
+  EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL    Passthru;
 
   //
   // pointer to identify controller data
   //
-  NVME_ADMIN_CONTROLLER_DATA          *ControllerData;
+  NVME_ADMIN_CONTROLLER_DATA            *ControllerData;
 
   //
   // 6 x 4kB aligned buffers will be carved out of this buffer.
   // 1st 4kB boundary is the start of the admin submission queue.
-  // 2nd 4kB boundary is the start of the I/O submission queue #1.
-  // 3rd 4kB boundary is the start of the admin completion queue.
-  // 4th 4kB boundary is the start of the I/O completion queue #1.
-  // 5th 4kB boundary is the start of the first PRP list page.
-  // 6th 4kB boundary is the start of the second PRP list page.
+  // 2nd 4kB boundary is the start of the admin completion queue.
+  // 3rd 4kB boundary is the start of I/O submission queue #1.
+  // 4th 4kB boundary is the start of I/O completion queue #1.
+  // 5th 4kB boundary is the start of I/O submission queue #2.
+  // 6th 4kB boundary is the start of I/O completion queue #2.
   //
-  UINT8                               *Buffer;
-  UINT8                               *BufferPciAddr;
+  UINT8          *Buffer;
+  UINT8          *BufferPciAddr;
 
   //
   // Pointers to 4kB aligned submission & completion queues.
   //
-  NVME_SQ                             *SqBuffer[NVME_MAX_QUEUES];
-  NVME_CQ                             *CqBuffer[NVME_MAX_QUEUES];
-  NVME_SQ                             *SqBufferPciAddr[NVME_MAX_QUEUES];
-  NVME_CQ                             *CqBufferPciAddr[NVME_MAX_QUEUES];
+  NVME_SQ        *SqBuffer[NVME_MAX_QUEUES];
+  NVME_CQ        *CqBuffer[NVME_MAX_QUEUES];
+  NVME_SQ        *SqBufferPciAddr[NVME_MAX_QUEUES];
+  NVME_CQ        *CqBufferPciAddr[NVME_MAX_QUEUES];
 
   //
   // Submission and completion queue indices.
   //
-  NVME_SQTDBL                         SqTdbl[NVME_MAX_QUEUES];
-  NVME_CQHDBL                         CqHdbl[NVME_MAX_QUEUES];
+  NVME_SQTDBL    SqTdbl[NVME_MAX_QUEUES];
+  NVME_CQHDBL    CqHdbl[NVME_MAX_QUEUES];
+  UINT16         AsyncSqHead;
 
-  UINT8                               Pt[NVME_MAX_QUEUES];
-  UINT16                              Cid[NVME_MAX_QUEUES];
+  //
+  // Flag to indicate internal IO queue creation.
+  //
+  BOOLEAN        CreateIoQueue;
+
+  UINT8          Pt[NVME_MAX_QUEUES];
+  UINT16         Cid[NVME_MAX_QUEUES];
 
   //
   // Nvme controller capabilities
   //
-  NVME_CAP                            Cap;
+  NVME_CAP       Cap;
 
-  VOID                                *Mapping;
+  VOID           *Mapping;
+
+  //
+  // For Non-blocking operations.
+  //
+  EFI_EVENT      TimerEvent;
+  LIST_ENTRY     AsyncPassThruQueue;
+  LIST_ENTRY     UnsubmittedSubtasks;
 };
 
 #define NVME_CONTROLLER_PRIVATE_DATA_FROM_PASS_THRU(a) \
@@ -147,7 +204,7 @@ struct _NVME_CONTROLLER_PRIVATE_DATA {
 //
 // Unique signature for private data structure.
 //
-#define NVME_DEVICE_PRIVATE_DATA_SIGNATURE     SIGNATURE_32 ('X','S','S','D')
+#define NVME_DEVICE_PRIVATE_DATA_SIGNATURE  SIGNATURE_32 ('X','S','S','D')
 
 //
 // Nvme device private data structure
@@ -168,8 +225,13 @@ struct _NVME_DEVICE_PRIVATE_DATA {
 
   EFI_BLOCK_IO_MEDIA                       Media;
   EFI_BLOCK_IO_PROTOCOL                    BlockIo;
+  EFI_BLOCK_IO2_PROTOCOL                   BlockIo2;
   EFI_DISK_INFO_PROTOCOL                   DiskInfo;
   EFI_STORAGE_SECURITY_COMMAND_PROTOCOL    StorageSecurity;
+
+  MEDIA_SANITIZE_PROTOCOL                  MediaSanitize;
+
+  LIST_ENTRY                               AsyncQueue;
 
   EFI_LBA                                  NumBlocks;
 
@@ -177,7 +239,6 @@ struct _NVME_DEVICE_PRIVATE_DATA {
   NVME_ADMIN_NAMESPACE_DATA                NamespaceData;
 
   NVME_CONTROLLER_PRIVATE_DATA             *Controller;
-
 };
 
 //
@@ -190,6 +251,13 @@ struct _NVME_DEVICE_PRIVATE_DATA {
       NVME_DEVICE_PRIVATE_DATA_SIGNATURE \
       )
 
+#define NVME_DEVICE_PRIVATE_DATA_FROM_BLOCK_IO2(a) \
+  CR (a, \
+      NVME_DEVICE_PRIVATE_DATA, \
+      BlockIo2, \
+      NVME_DEVICE_PRIVATE_DATA_SIGNATURE \
+      )
+
 #define NVME_DEVICE_PRIVATE_DATA_FROM_DISK_INFO(a) \
   CR (a, \
       NVME_DEVICE_PRIVATE_DATA, \
@@ -197,11 +265,84 @@ struct _NVME_DEVICE_PRIVATE_DATA {
       NVME_DEVICE_PRIVATE_DATA_SIGNATURE \
       )
 
-#define NVME_DEVICE_PRIVATE_DATA_FROM_STORAGE_SECURITY(a)\
+#define NVME_DEVICE_PRIVATE_DATA_FROM_STORAGE_SECURITY(a) \
   CR (a,                                                 \
       NVME_DEVICE_PRIVATE_DATA,                          \
       StorageSecurity,                                   \
       NVME_DEVICE_PRIVATE_DATA_SIGNATURE                 \
+      )
+
+#define NVME_DEVICE_PRIVATE_DATA_FROM_MEDIA_SANITIZE(a) \
+  CR (a,                                                \
+      NVME_DEVICE_PRIVATE_DATA,                         \
+      MediaSanitize,                                    \
+      NVME_DEVICE_PRIVATE_DATA_SIGNATURE                \
+      )
+
+//
+// Nvme block I/O 2 request.
+//
+#define NVME_BLKIO2_REQUEST_SIGNATURE  SIGNATURE_32 ('N', 'B', '2', 'R')
+
+typedef struct {
+  UINT32                 Signature;
+  LIST_ENTRY             Link;
+
+  EFI_BLOCK_IO2_TOKEN    *Token;
+  UINTN                  UnsubmittedSubtaskNum;
+  BOOLEAN                LastSubtaskSubmitted;
+  //
+  // The queue for Nvme read/write sub-tasks of a BlockIo2 request.
+  //
+  LIST_ENTRY             SubtasksQueue;
+} NVME_BLKIO2_REQUEST;
+
+#define NVME_BLKIO2_REQUEST_FROM_LINK(a) \
+  CR (a, NVME_BLKIO2_REQUEST, Link, NVME_BLKIO2_REQUEST_SIGNATURE)
+
+#define NVME_BLKIO2_SUBTASK_SIGNATURE  SIGNATURE_32 ('N', 'B', '2', 'S')
+
+typedef struct {
+  UINT32                                      Signature;
+  LIST_ENTRY                                  Link;
+
+  BOOLEAN                                     IsLast;
+  UINT32                                      NamespaceId;
+  EFI_EVENT                                   Event;
+  EFI_NVM_EXPRESS_PASS_THRU_COMMAND_PACKET    *CommandPacket;
+  //
+  // The BlockIo2 request this subtask belongs to
+  //
+  NVME_BLKIO2_REQUEST                         *BlockIo2Request;
+} NVME_BLKIO2_SUBTASK;
+
+#define NVME_BLKIO2_SUBTASK_FROM_LINK(a) \
+  CR (a, NVME_BLKIO2_SUBTASK, Link, NVME_BLKIO2_SUBTASK_SIGNATURE)
+
+//
+// Nvme asynchronous passthru request.
+//
+#define NVME_PASS_THRU_ASYNC_REQ_SIG  SIGNATURE_32 ('N', 'P', 'A', 'R')
+
+typedef struct {
+  UINT32                                      Signature;
+  LIST_ENTRY                                  Link;
+
+  EFI_NVM_EXPRESS_PASS_THRU_COMMAND_PACKET    *Packet;
+  UINT16                                      CommandId;
+  VOID                                        *MapPrpList;
+  UINTN                                       PrpListNo;
+  VOID                                        *PrpListHost;
+  VOID                                        *MapData;
+  VOID                                        *MapMeta;
+  EFI_EVENT                                   CallerEvent;
+} NVME_PASS_THRU_ASYNC_REQ;
+
+#define NVME_PASS_THRU_ASYNC_REQ_FROM_THIS(a) \
+  CR (a,                                                 \
+      NVME_PASS_THRU_ASYNC_REQ,                          \
+      Link,                                              \
+      NVME_PASS_THRU_ASYNC_REQ_SIG                       \
       )
 
 /**
@@ -322,11 +463,11 @@ NvmExpressComponentNameGetDriverName (
 EFI_STATUS
 EFIAPI
 NvmExpressComponentNameGetControllerName (
-  IN  EFI_COMPONENT_NAME_PROTOCOL                     *This,
-  IN  EFI_HANDLE                                      ControllerHandle,
-  IN  EFI_HANDLE                                      ChildHandle        OPTIONAL,
-  IN  CHAR8                                           *Language,
-  OUT CHAR16                                          **ControllerName
+  IN  EFI_COMPONENT_NAME_PROTOCOL  *This,
+  IN  EFI_HANDLE                   ControllerHandle,
+  IN  EFI_HANDLE                   ChildHandle        OPTIONAL,
+  IN  CHAR8                        *Language,
+  OUT CHAR16                       **ControllerName
   );
 
 /**
@@ -451,10 +592,10 @@ NvmExpressDriverBindingStart (
 EFI_STATUS
 EFIAPI
 NvmExpressDriverBindingStop (
-  IN  EFI_DRIVER_BINDING_PROTOCOL     *This,
-  IN  EFI_HANDLE                      Controller,
-  IN  UINTN                           NumberOfChildren,
-  IN  EFI_HANDLE                      *ChildHandleBuffer
+  IN  EFI_DRIVER_BINDING_PROTOCOL  *This,
+  IN  EFI_HANDLE                   Controller,
+  IN  UINTN                        NumberOfChildren,
+  IN  EFI_HANDLE                   *ChildHandleBuffer
   );
 
 /**
@@ -490,10 +631,10 @@ NvmExpressDriverBindingStop (
 EFI_STATUS
 EFIAPI
 NvmExpressPassThru (
-  IN     EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL          *This,
-  IN     UINT32                                      NamespaceId,
-  IN OUT EFI_NVM_EXPRESS_PASS_THRU_COMMAND_PACKET    *Packet,
-  IN     EFI_EVENT                                   Event OPTIONAL
+  IN     EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL        *This,
+  IN     UINT32                                    NamespaceId,
+  IN OUT EFI_NVM_EXPRESS_PASS_THRU_COMMAND_PACKET  *Packet,
+  IN     EFI_EVENT                                 Event OPTIONAL
   );
 
 /**
@@ -532,8 +673,8 @@ NvmExpressPassThru (
 EFI_STATUS
 EFIAPI
 NvmExpressGetNextNamespace (
-  IN     EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL          *This,
-  IN OUT UINT32                                      *NamespaceId
+  IN     EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL  *This,
+  IN OUT UINT32                              *NamespaceId
   );
 
 /**
@@ -563,9 +704,9 @@ NvmExpressGetNextNamespace (
 EFI_STATUS
 EFIAPI
 NvmExpressGetNamespace (
-  IN     EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL          *This,
-  IN     EFI_DEVICE_PATH_PROTOCOL                    *DevicePath,
-     OUT UINT32                                      *NamespaceId
+  IN     EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL  *This,
+  IN     EFI_DEVICE_PATH_PROTOCOL            *DevicePath,
+  OUT UINT32                                 *NamespaceId
   );
 
 /**
@@ -602,9 +743,40 @@ NvmExpressGetNamespace (
 EFI_STATUS
 EFIAPI
 NvmExpressBuildDevicePath (
-  IN     EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL          *This,
-  IN     UINT32                                      NamespaceId,
-  IN OUT EFI_DEVICE_PATH_PROTOCOL                    **DevicePath
+  IN     EFI_NVM_EXPRESS_PASS_THRU_PROTOCOL  *This,
+  IN     UINT32                              NamespaceId,
+  IN OUT EFI_DEVICE_PATH_PROTOCOL            **DevicePath
+  );
+
+/**
+  Dump the execution status from a given completion queue entry.
+
+  @param[in]     Cq               A pointer to the NVME_CQ item.
+
+**/
+VOID
+NvmeDumpStatus (
+  IN NVME_CQ  *Cq
+  );
+
+/**
+  Register the shutdown notification through the ResetNotification protocol.
+
+  Register the shutdown notification when mNvmeControllerNumber increased from 0 to 1.
+**/
+VOID
+NvmeRegisterShutdownNotification (
+  VOID
+  );
+
+/**
+  Unregister the shutdown notification through the ResetNotification protocol.
+
+  Unregister the shutdown notification when mNvmeControllerNumber decreased from 1 to 0.
+**/
+VOID
+NvmeUnregisterShutdownNotification (
+  VOID
   );
 
 #endif

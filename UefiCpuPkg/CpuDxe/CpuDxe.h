@@ -1,14 +1,8 @@
 /** @file
-  CPU DXE Module.
+  CPU DXE Module to produce CPU ARCH Protocol and CPU MP Protocol.
 
-  Copyright (c) 2008 - 2013, Intel Corporation. All rights reserved.<BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  Copyright (c) 2008 - 2023, Intel Corporation. All rights reserved.<BR>
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -18,6 +12,12 @@
 #include <PiDxe.h>
 
 #include <Protocol/Cpu.h>
+#include <Protocol/MpService.h>
+#include <Register/Intel/Cpuid.h>
+#include <Register/Intel/Msr.h>
+
+#include <Ppi/SecPlatformInformation.h>
+#include <Ppi/SecPlatformInformation2.h>
 
 #include <Library/UefiDriverEntryPoint.h>
 #include <Library/UefiBootServicesTableLib.h>
@@ -29,20 +29,21 @@
 #include <Library/DebugLib.h>
 #include <Library/MtrrLib.h>
 #include <Library/LocalApicLib.h>
-#include <Library/UefiCpuLib.h>
 #include <Library/UefiLib.h>
 #include <Library/CpuExceptionHandlerLib.h>
+#include <Library/HobLib.h>
+#include <Library/ReportStatusCodeLib.h>
+#include <Library/MpInitLib.h>
 #include <Library/TimerLib.h>
+
 #include <Guid/IdleLoopEvent.h>
 #include <Guid/VectorHandoffTable.h>
 
-#define EFI_MEMORY_CACHETYPE_MASK     (EFI_MEMORY_UC  | \
-                                       EFI_MEMORY_WC  | \
-                                       EFI_MEMORY_WT  | \
-                                       EFI_MEMORY_WB  | \
-                                       EFI_MEMORY_UCE   \
-                                       )
+#define HEAP_GUARD_NONSTOP_MODE       \
+        ((PcdGet8 (PcdHeapGuardPropertyMask) & (BIT6|BIT4|BIT1|BIT0)) > BIT6)
 
+#define NULL_DETECTION_NONSTOP_MODE   \
+        ((PcdGet8 (PcdNullPointerDetectionPropertyMask) & (BIT6|BIT0)) > BIT6)
 
 /**
   Flush CPU data cache. If the instruction cache is fully coherent
@@ -62,10 +63,10 @@
 EFI_STATUS
 EFIAPI
 CpuFlushCpuDataCache (
-  IN EFI_CPU_ARCH_PROTOCOL     *This,
-  IN EFI_PHYSICAL_ADDRESS      Start,
-  IN UINT64                    Length,
-  IN EFI_CPU_FLUSH_TYPE        FlushType
+  IN EFI_CPU_ARCH_PROTOCOL  *This,
+  IN EFI_PHYSICAL_ADDRESS   Start,
+  IN UINT64                 Length,
+  IN EFI_CPU_FLUSH_TYPE     FlushType
   );
 
 /**
@@ -80,7 +81,7 @@ CpuFlushCpuDataCache (
 EFI_STATUS
 EFIAPI
 CpuEnableInterrupt (
-  IN EFI_CPU_ARCH_PROTOCOL     *This
+  IN EFI_CPU_ARCH_PROTOCOL  *This
   );
 
 /**
@@ -95,7 +96,7 @@ CpuEnableInterrupt (
 EFI_STATUS
 EFIAPI
 CpuDisableInterrupt (
-  IN EFI_CPU_ARCH_PROTOCOL     *This
+  IN EFI_CPU_ARCH_PROTOCOL  *This
   );
 
 /**
@@ -111,8 +112,8 @@ CpuDisableInterrupt (
 EFI_STATUS
 EFIAPI
 CpuGetInterruptState (
-  IN  EFI_CPU_ARCH_PROTOCOL     *This,
-  OUT BOOLEAN                   *State
+  IN  EFI_CPU_ARCH_PROTOCOL  *This,
+  OUT BOOLEAN                *State
   );
 
 /**
@@ -130,8 +131,8 @@ CpuGetInterruptState (
 EFI_STATUS
 EFIAPI
 CpuInit (
-  IN EFI_CPU_ARCH_PROTOCOL     *This,
-  IN EFI_CPU_INIT_TYPE         InitType
+  IN EFI_CPU_ARCH_PROTOCOL  *This,
+  IN EFI_CPU_INIT_TYPE      InitType
   );
 
 /**
@@ -157,9 +158,9 @@ CpuInit (
 EFI_STATUS
 EFIAPI
 CpuRegisterInterruptHandler (
-  IN EFI_CPU_ARCH_PROTOCOL         *This,
-  IN EFI_EXCEPTION_TYPE            InterruptType,
-  IN EFI_CPU_INTERRUPT_HANDLER     InterruptHandler
+  IN EFI_CPU_ARCH_PROTOCOL      *This,
+  IN EFI_EXCEPTION_TYPE         InterruptType,
+  IN EFI_CPU_INTERRUPT_HANDLER  InterruptHandler
   );
 
 /**
@@ -188,14 +189,14 @@ CpuRegisterInterruptHandler (
 EFI_STATUS
 EFIAPI
 CpuGetTimerValue (
-  IN  EFI_CPU_ARCH_PROTOCOL       *This,
-  IN  UINT32                      TimerIndex,
-  OUT UINT64                      *TimerValue,
-  OUT UINT64                      *TimerPeriod OPTIONAL
+  IN  EFI_CPU_ARCH_PROTOCOL  *This,
+  IN  UINT32                 TimerIndex,
+  OUT UINT64                 *TimerValue,
+  OUT UINT64                 *TimerPeriod OPTIONAL
   );
 
 /**
-  Set memory cacheability attributes for given range of memeory.
+  Set memory cacheability attributes for given range of memory.
 
   @param  This                   Protocol instance structure
   @param  BaseAddress            Specifies the start address of the
@@ -213,10 +214,10 @@ CpuGetTimerValue (
 EFI_STATUS
 EFIAPI
 CpuSetMemoryAttributes (
-  IN EFI_CPU_ARCH_PROTOCOL      *This,
-  IN EFI_PHYSICAL_ADDRESS       BaseAddress,
-  IN UINT64                     Length,
-  IN UINT64                     Attributes
+  IN EFI_CPU_ARCH_PROTOCOL  *This,
+  IN EFI_PHYSICAL_ADDRESS   BaseAddress,
+  IN UINT64                 Length,
+  IN UINT64                 Attributes
   );
 
 /**
@@ -237,7 +238,7 @@ InitGlobalDescriptorTable (
 VOID
 EFIAPI
 SetCodeSelector (
-  UINT16 Selector
+  UINT16  Selector
   );
 
 /**
@@ -249,8 +250,50 @@ SetCodeSelector (
 VOID
 EFIAPI
 SetDataSelectors (
-  UINT16 Selector
+  UINT16  Selector
   );
 
-#endif
+/**
+  Update GCD memory space attributes according to current page table setup.
+**/
+VOID
+RefreshGcdMemoryAttributesFromPaging (
+  VOID
+  );
 
+/**
+  Special handler for #DB exception, which will restore the page attributes
+  (not-present). It should work with #PF handler which will set pages to
+  'present'.
+
+  @param ExceptionType  Exception type.
+  @param SystemContext  Pointer to EFI_SYSTEM_CONTEXT.
+
+**/
+VOID
+EFIAPI
+DebugExceptionHandler (
+  IN EFI_EXCEPTION_TYPE  ExceptionType,
+  IN EFI_SYSTEM_CONTEXT  SystemContext
+  );
+
+/**
+  Special handler for #PF exception, which will set the pages which caused
+  #PF to be 'present'. The attribute of those pages should be restored in
+  the subsequent #DB handler.
+
+  @param ExceptionType  Exception type.
+  @param SystemContext  Pointer to EFI_SYSTEM_CONTEXT.
+
+**/
+VOID
+EFIAPI
+PageFaultExceptionHandler (
+  IN EFI_EXCEPTION_TYPE  ExceptionType,
+  IN EFI_SYSTEM_CONTEXT  SystemContext
+  );
+
+extern BOOLEAN  mIsAllocatingPageTable;
+extern UINTN    mNumberOfProcessors;
+
+#endif

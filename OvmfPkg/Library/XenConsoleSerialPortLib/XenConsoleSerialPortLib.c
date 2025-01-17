@@ -2,19 +2,13 @@
   Xen console SerialPortLib instance
 
   Copyright (c) 2015, Linaro Ltd. All rights reserved.<BR>
+  Copyright (c) 2015, Intel Corporation. All rights reserved.<BR>
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #include <Base.h>
-#include <Uefi/UefiBaseType.h>
 
 #include <Library/BaseLib.h>
 #include <Library/SerialPortLib.h>
@@ -42,8 +36,8 @@
 // in general, it is actually fine for the Xen domU (guest) environment that
 // this module is intended for, as UEFI always executes from DRAM in that case.
 //
-STATIC evtchn_send_t              mXenConsoleEventChain;
-STATIC struct xencons_interface   *mXenConsoleInterface;
+STATIC evtchn_send_t             mXenConsoleEventChain;
+STATIC struct xencons_interface  *mXenConsoleInterface;
 
 /**
   Initialize the serial device hardware.
@@ -62,19 +56,20 @@ SerialPortInitialize (
   VOID
   )
 {
-  if (! XenHypercallIsAvailable ()) {
+  if (!XenHypercallIsAvailable ()) {
     return RETURN_DEVICE_ERROR;
   }
 
   if (!mXenConsoleInterface) {
     mXenConsoleEventChain.port = (UINT32)XenHypercallHvmGetParam (HVM_PARAM_CONSOLE_EVTCHN);
-    mXenConsoleInterface = (struct xencons_interface *)(UINTN)
-      (XenHypercallHvmGetParam (HVM_PARAM_CONSOLE_PFN) << EFI_PAGE_SHIFT);
+    mXenConsoleInterface       = (struct xencons_interface *)(UINTN)
+                                 (XenHypercallHvmGetParam (HVM_PARAM_CONSOLE_PFN) << EFI_PAGE_SHIFT);
 
     //
     // No point in ASSERT'ing here as we won't be seeing the output
     //
   }
+
   return RETURN_SUCCESS;
 }
 
@@ -98,8 +93,8 @@ SerialPortInitialize (
 UINTN
 EFIAPI
 SerialPortWrite (
-  IN UINT8     *Buffer,
-  IN UINTN     NumberOfBytes
+  IN UINT8  *Buffer,
+  IN UINTN  NumberOfBytes
   )
 {
   XENCONS_RING_IDX  Consumer, Producer;
@@ -122,15 +117,15 @@ SerialPortWrite (
 
     MemoryFence ();
 
-    while (Sent < NumberOfBytes && ((Producer - Consumer) < sizeof (mXenConsoleInterface->out)))
-      mXenConsoleInterface->out[MASK_XENCONS_IDX(Producer++, mXenConsoleInterface->out)] = Buffer[Sent++];
+    while (Sent < NumberOfBytes && ((Producer - Consumer) < sizeof (mXenConsoleInterface->out))) {
+      mXenConsoleInterface->out[MASK_XENCONS_IDX (Producer++, mXenConsoleInterface->out)] = Buffer[Sent++];
+    }
 
     MemoryFence ();
 
     mXenConsoleInterface->out_prod = Producer;
 
     XenHypercallEventChannelOp (EVTCHNOP_send, &mXenConsoleEventChain);
-
   } while (Sent < NumberOfBytes);
 
   return Sent;
@@ -154,9 +149,9 @@ SerialPortWrite (
 UINTN
 EFIAPI
 SerialPortRead (
-  OUT UINT8     *Buffer,
-  IN  UINTN     NumberOfBytes
-)
+  OUT UINT8  *Buffer,
+  IN  UINTN  NumberOfBytes
+  )
 {
   XENCONS_RING_IDX  Consumer, Producer;
   UINTN             Received;
@@ -177,8 +172,9 @@ SerialPortRead (
   MemoryFence ();
 
   Received = 0;
-  while (Received < NumberOfBytes && Consumer < Producer)
-     Buffer[Received++] = mXenConsoleInterface->in[MASK_XENCONS_IDX(Consumer++, mXenConsoleInterface->in)];
+  while (Received < NumberOfBytes && Consumer < Producer) {
+    Buffer[Received++] = mXenConsoleInterface->in[MASK_XENCONS_IDX (Consumer++, mXenConsoleInterface->in)];
+  }
 
   MemoryFence ();
 
@@ -203,5 +199,99 @@ SerialPortPoll (
   )
 {
   return mXenConsoleInterface &&
-    mXenConsoleInterface->in_cons != mXenConsoleInterface->in_prod;
+         mXenConsoleInterface->in_cons != mXenConsoleInterface->in_prod;
+}
+
+/**
+  Sets the control bits on a serial device.
+
+  @param Control                Sets the bits of Control that are settable.
+
+  @retval RETURN_SUCCESS        The new control bits were set on the serial device.
+  @retval RETURN_UNSUPPORTED    The serial device does not support this operation.
+  @retval RETURN_DEVICE_ERROR   The serial device is not functioning correctly.
+
+**/
+RETURN_STATUS
+EFIAPI
+SerialPortSetControl (
+  IN UINT32  Control
+  )
+{
+  return RETURN_UNSUPPORTED;
+}
+
+/**
+  Retrieve the status of the control bits on a serial device.
+
+  @param Control                A pointer to return the current control signals from the serial device.
+
+  @retval RETURN_SUCCESS        The control bits were read from the serial device.
+  @retval RETURN_UNSUPPORTED    The serial device does not support this operation.
+  @retval RETURN_DEVICE_ERROR   The serial device is not functioning correctly.
+
+**/
+RETURN_STATUS
+EFIAPI
+SerialPortGetControl (
+  OUT UINT32  *Control
+  )
+{
+  if (!mXenConsoleInterface) {
+    return RETURN_UNSUPPORTED;
+  }
+
+  *Control = 0;
+  if (!SerialPortPoll ()) {
+    *Control = EFI_SERIAL_INPUT_BUFFER_EMPTY;
+  }
+
+  return RETURN_SUCCESS;
+}
+
+/**
+  Sets the baud rate, receive FIFO depth, transmit/receive time out, parity,
+  data bits, and stop bits on a serial device.
+
+  @param BaudRate           The requested baud rate. A BaudRate value of 0 will use the
+                            device's default interface speed.
+                            On output, the value actually set.
+  @param ReceiveFifoDepth   The requested depth of the FIFO on the receive side of the
+                            serial interface. A ReceiveFifoDepth value of 0 will use
+                            the device's default FIFO depth.
+                            On output, the value actually set.
+  @param Timeout            The requested time out for a single character in microseconds.
+                            This timeout applies to both the transmit and receive side of the
+                            interface. A Timeout value of 0 will use the device's default time
+                            out value.
+                            On output, the value actually set.
+  @param Parity             The type of parity to use on this serial device. A Parity value of
+                            DefaultParity will use the device's default parity value.
+                            On output, the value actually set.
+  @param DataBits           The number of data bits to use on the serial device. A DataBits
+                            value of 0 will use the device's default data bit setting.
+                            On output, the value actually set.
+  @param StopBits           The number of stop bits to use on this serial device. A StopBits
+                            value of DefaultStopBits will use the device's default number of
+                            stop bits.
+                            On output, the value actually set.
+
+  @retval RETURN_SUCCESS            The new attributes were set on the serial device.
+  @retval RETURN_UNSUPPORTED        The serial device does not support this operation.
+  @retval RETURN_INVALID_PARAMETER  One or more of the attributes has an unsupported value.
+  @retval RETURN_DEVICE_ERROR       The serial device is not functioning correctly.
+
+**/
+RETURN_STATUS
+EFIAPI
+SerialPortSetAttributes (
+  IN OUT UINT64              *BaudRate,
+  IN OUT UINT32              *ReceiveFifoDepth,
+  IN OUT UINT32              *Timeout,
+  IN OUT EFI_PARITY_TYPE     *Parity,
+  IN OUT UINT8               *DataBits,
+  IN OUT EFI_STOP_BITS_TYPE  *StopBits
+  )
+{
+  return RETURN_UNSUPPORTED;
 }

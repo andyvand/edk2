@@ -1,21 +1,14 @@
 /** @file
 Implementation of interfaces function for EFI_CONFIG_KEYWORD_HANDLER_PROTOCOL.
 
-Copyright (c) 2015, Intel Corporation. All rights reserved.<BR>
-This program and the accompanying materials
-are licensed and made available under the terms and conditions of the BSD License
-which accompanies this distribution.  The full text of the license may be found at
-http://opensource.org/licenses/bsd-license.php
-
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+Copyright (c) 2015 - 2018, Intel Corporation. All rights reserved.<BR>
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-
 #include "HiiDatabase.h"
 
-extern HII_DATABASE_PRIVATE_DATA mPrivate;
+extern HII_DATABASE_PRIVATE_DATA  mPrivate;
 
 /**
   Convert the hex UNICODE %02x encoding of a UEFI device path to binary
@@ -28,25 +21,25 @@ extern HII_DATABASE_PRIVATE_DATA mPrivate;
   @param  NextString             string follow the possible PathHdr string.
 
   @retval EFI_INVALID_PARAMETER  The device path is not valid or the incoming parameter is invalid.
-  @retval EFI_OUT_OF_RESOURCES   Lake of resources to store neccesary structures.
+  @retval EFI_OUT_OF_RESOURCES   Lake of resources to store necessary structures.
   @retval EFI_SUCCESS            The device path is retrieved and translated to binary format.
                                  The Input string not include PathHdr section.
 
 **/
 EFI_STATUS
 ExtractDevicePath (
-  IN  EFI_STRING                   String,
-  OUT UINT8                        **DevicePathData,
-  OUT EFI_STRING                   *NextString
+  IN  EFI_STRING  String,
+  OUT UINT8       **DevicePathData,
+  OUT EFI_STRING  *NextString
   )
 {
-  UINTN                    Length;
-  EFI_STRING               PathHdr;
-  UINT8                    *DevicePathBuffer;
-  CHAR16                   TemStr[2];
-  UINTN                    Index;
-  UINT8                    DigitUint8;
-  EFI_DEVICE_PATH_PROTOCOL *DevicePath;
+  UINTN                     Length;
+  EFI_STRING                PathHdr;
+  UINT8                     *DevicePathBuffer;
+  CHAR16                    TemStr[2];
+  UINTN                     Index;
+  UINT8                     DigitUint8;
+  EFI_DEVICE_PATH_PROTOCOL  *DevicePath;
 
   ASSERT (NextString != NULL && DevicePathData != NULL);
 
@@ -55,7 +48,7 @@ ExtractDevicePath (
   //
   if (String == NULL) {
     *DevicePathData = NULL;
-    *NextString = NULL;
+    *NextString     = NULL;
     return EFI_SUCCESS;
   }
 
@@ -63,7 +56,7 @@ ExtractDevicePath (
   // Skip '&' if exist.
   //
   if (*String == L'&') {
-    String ++;
+    String++;
   }
 
   //
@@ -77,7 +70,7 @@ ExtractDevicePath (
       // Not include PathHdr, return success and DevicePath = NULL.
       //
       *DevicePathData = NULL;
-      *NextString = String;
+      *NextString     = String;
       return EFI_SUCCESS;
     }
   }
@@ -89,6 +82,7 @@ ExtractDevicePath (
   if (*String == 0) {
     return EFI_INVALID_PARAMETER;
   }
+
   PathHdr = String;
 
   //
@@ -96,7 +90,8 @@ ExtractDevicePath (
   // or '\0' (end of configuration string) is the UNICODE %02x bytes encoding
   // of UEFI device path.
   //
-  for (Length = 0; *String != 0 && *String != L'&'; String++, Length++);
+  for (Length = 0; *String != 0 && *String != L'&'; String++, Length++) {
+  }
 
   //
   // Save the return next keyword string value.
@@ -109,35 +104,35 @@ ExtractDevicePath (
   if (((Length + 1) / 2) < sizeof (EFI_DEVICE_PATH_PROTOCOL)) {
     return EFI_INVALID_PARAMETER;
   }
-  
+
   //
   // The data in <PathHdr> is encoded as hex UNICODE %02x bytes in the same order
   // as the device path resides in RAM memory.
   // Translate the data into binary.
   //
-  DevicePathBuffer = (UINT8 *) AllocateZeroPool ((Length + 1) / 2);
+  DevicePathBuffer = (UINT8 *)AllocateZeroPool ((Length + 1) / 2);
   if (DevicePathBuffer == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
-  
+
   //
   // Convert DevicePath
   //
   ZeroMem (TemStr, sizeof (TemStr));
-  for (Index = 0; Index < Length; Index ++) {
-    TemStr[0] = PathHdr[Index];
-    DigitUint8 = (UINT8) StrHexToUint64 (TemStr);
+  for (Index = 0; Index < Length; Index++) {
+    TemStr[0]  = PathHdr[Index];
+    DigitUint8 = (UINT8)StrHexToUint64 (TemStr);
     if ((Index & 1) == 0) {
-      DevicePathBuffer [Index/2] = DigitUint8;
+      DevicePathBuffer[Index/2] = DigitUint8;
     } else {
-      DevicePathBuffer [Index/2] = (UINT8) ((DevicePathBuffer [Index/2] << 4) + DigitUint8);
+      DevicePathBuffer[Index/2] = (UINT8)((DevicePathBuffer[Index/2] << 4) + DigitUint8);
     }
   }
-  
+
   //
   // Validate DevicePath
   //
-  DevicePath  = (EFI_DEVICE_PATH_PROTOCOL *) DevicePathBuffer;
+  DevicePath = (EFI_DEVICE_PATH_PROTOCOL *)DevicePathBuffer;
   while (!IsDevicePathEnd (DevicePath)) {
     if ((DevicePath->Type == 0) || (DevicePath->SubType == 0) || (DevicePathNodeLength (DevicePath) < sizeof (EFI_DEVICE_PATH_PROTOCOL))) {
       //
@@ -146,6 +141,7 @@ ExtractDevicePath (
       FreePool (DevicePathBuffer);
       return EFI_INVALID_PARAMETER;
     }
+
     DevicePath = NextDevicePathNode (DevicePath);
   }
 
@@ -172,12 +168,13 @@ ExtractDevicePath (
 **/
 EFI_STATUS
 ExtractNameSpace (
-  IN  EFI_STRING                   String,
-  OUT CHAR8                        **NameSpace,
-  OUT EFI_STRING                   *NextString
+  IN  EFI_STRING  String,
+  OUT CHAR8       **NameSpace,
+  OUT EFI_STRING  *NextString
   )
 {
-  CHAR16    *TmpPtr;
+  CHAR16  *TmpPtr;
+  UINTN   NameSpaceSize;
 
   ASSERT (NameSpace != NULL);
 
@@ -191,6 +188,7 @@ ExtractNameSpace (
     if (NextString != NULL) {
       *NextString = NULL;
     }
+
     return EFI_SUCCESS;
   }
 
@@ -204,12 +202,14 @@ ExtractNameSpace (
   if (StrnCmp (String, L"NAMESPACE=", StrLen (L"NAMESPACE=")) != 0) {
     return EFI_INVALID_PARAMETER;
   }
+
   String += StrLen (L"NAMESPACE=");
 
   TmpPtr = StrStr (String, L"&");
   if (TmpPtr != NULL) {
-    *TmpPtr = 0; 
+    *TmpPtr = 0;
   }
+
   if (NextString != NULL) {
     *NextString = String + StrLen (String);
   }
@@ -218,14 +218,16 @@ ExtractNameSpace (
   // Input NameSpace is unicode string. The language in String package is ascii string.
   // Here will convert the unicode string to ascii and save it.
   //
-  *NameSpace = AllocatePool (StrLen (String) + 1);
+  NameSpaceSize = StrLen (String) + 1;
+  *NameSpace    = AllocatePool (NameSpaceSize);
   if (*NameSpace == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
-  UnicodeStrToAsciiStr (String, *NameSpace);
+
+  UnicodeStrToAsciiStrS (String, *NameSpace, NameSpaceSize);
 
   if (TmpPtr != NULL) {
-    *TmpPtr = L'&'; 
+    *TmpPtr = L'&';
   }
 
   return EFI_SUCCESS;
@@ -238,30 +240,30 @@ ExtractNameSpace (
 
   @param  String                 KeywordRequestformat string.
   @param  Keyword                return the extract keyword string.
-  @param  NextString             return the next string follow this keyword sectin.
+  @param  NextString             return the next string follow this keyword section.
 
   @retval EFI_SUCCESS            Success to get the keyword string.
-  @retval EFI_INVALID_PARAMETER  Parsr the input string return error.
+  @retval EFI_INVALID_PARAMETER  Parse the input string return error.
 
 **/
 EFI_STATUS
 ExtractKeyword (
-  IN  EFI_STRING                   String,
-  OUT EFI_STRING                   *Keyword,
-  OUT EFI_STRING                   *NextString
+  IN  EFI_STRING  String,
+  OUT EFI_STRING  *Keyword,
+  OUT EFI_STRING  *NextString
   )
 {
   EFI_STRING  TmpPtr;
 
   ASSERT ((Keyword != NULL) && (NextString != NULL));
-  
+
   TmpPtr = NULL;
 
   //
   // KeywordRequest == NULL case.
   //
   if (String == NULL) {
-    *Keyword = NULL;
+    *Keyword    = NULL;
     *NextString = NULL;
     return EFI_SUCCESS;
   }
@@ -278,11 +280,12 @@ ExtractKeyword (
   }
 
   String += StrLen (L"KEYWORD=");
-  
+
   TmpPtr = StrStr (String, L"&");
   if (TmpPtr != NULL) {
-    *TmpPtr = 0; 
+    *TmpPtr = 0;
   }
+
   *NextString = String + StrLen (String);
 
   *Keyword = AllocateCopyPool (StrSize (String), String);
@@ -293,7 +296,7 @@ ExtractKeyword (
   if (TmpPtr != NULL) {
     *TmpPtr = L'&';
   }
-  
+
   return EFI_SUCCESS;
 }
 
@@ -304,17 +307,17 @@ ExtractKeyword (
 
   @param  String                 KeywordRequestformat string.
   @param  Value                  return the extract value string.
-  @param  NextString             return the next string follow this keyword sectin.
+  @param  NextString             return the next string follow this keyword section.
 
   @retval EFI_SUCCESS            Success to get the keyword string.
-  @retval EFI_INVALID_PARAMETER  Parsr the input string return error.
+  @retval EFI_INVALID_PARAMETER  Parse the input string return error.
 
 **/
 EFI_STATUS
 ExtractValue (
-  IN  EFI_STRING                   String,
-  OUT EFI_STRING                   *Value,
-  OUT EFI_STRING                   *NextString
+  IN  EFI_STRING  String,
+  OUT EFI_STRING  *Value,
+  OUT EFI_STRING  *NextString
   )
 {
   EFI_STRING  TmpPtr;
@@ -333,11 +336,12 @@ ExtractValue (
   }
 
   String += StrLen (L"VALUE=");
-  
+
   TmpPtr = StrStr (String, L"&");
   if (TmpPtr != NULL) {
-    *TmpPtr = 0; 
+    *TmpPtr = 0;
   }
+
   *NextString = String + StrLen (String);
 
   *Value = AllocateCopyPool (StrSize (String), String);
@@ -348,7 +352,7 @@ ExtractValue (
   if (TmpPtr != NULL) {
     *TmpPtr = L'&';
   }
-  
+
   return EFI_SUCCESS;
 }
 
@@ -359,22 +363,22 @@ ExtractValue (
 
   @param  String                 KeywordRequestformat string.
   @param  FilterFlags            return the filter condition.
-  @param  NextString             return the next string follow this keyword sectin.
+  @param  NextString             return the next string follow this keyword section.
 
   @retval EFI_SUCCESS            Success to get the keyword string.
-  @retval EFI_INVALID_PARAMETER  Parsr the input string return error.
+  @retval EFI_INVALID_PARAMETER  Parse the input string return error.
 
 **/
 BOOLEAN
 ExtractFilter (
-  IN  EFI_STRING                   String,
-  OUT UINT8                        *FilterFlags,
-  OUT EFI_STRING                   *NextString
+  IN  EFI_STRING  String,
+  OUT UINT8       *FilterFlags,
+  OUT EFI_STRING  *NextString
   )
 {
-  CHAR16      *PathPtr;
-  CHAR16      *KeywordPtr;
-  BOOLEAN     RetVal; 
+  CHAR16   *PathPtr;
+  CHAR16   *KeywordPtr;
+  BOOLEAN  RetVal;
 
   ASSERT ((FilterFlags != NULL) && (NextString != NULL));
 
@@ -385,9 +389,9 @@ ExtractFilter (
     *NextString = NULL;
     return FALSE;
   }
-  
+
   *FilterFlags = 0;
-  RetVal = TRUE;
+  RetVal       = TRUE;
 
   //
   // Skip '&' if exist.
@@ -401,19 +405,19 @@ ExtractFilter (
     // Find ReadOnly filter.
     //
     *FilterFlags |= EFI_KEYWORD_FILTER_READONY;
-    String += StrLen (L"ReadOnly");
+    String       += StrLen (L"ReadOnly");
   } else if (StrnCmp (String, L"ReadWrite", StrLen (L"ReadWrite")) == 0) {
     //
     // Find ReadWrite filter.
     //
     *FilterFlags |= EFI_KEYWORD_FILTER_REAWRITE;
-    String += StrLen (L"ReadWrite");
+    String       += StrLen (L"ReadWrite");
   } else if (StrnCmp (String, L"Buffer", StrLen (L"Buffer")) == 0) {
     //
     // Find Buffer Filter.
     //
     *FilterFlags |= EFI_KEYWORD_FILTER_BUFFER;
-    String += StrLen (L"Buffer");
+    String       += StrLen (L"Buffer");
   } else if (StrnCmp (String, L"Numeric", StrLen (L"Numeric")) == 0) {
     //
     // Find Numeric Filter
@@ -424,22 +428,23 @@ ExtractFilter (
     } else {
       String++;
       switch (*String) {
-      case L'1':
-        *FilterFlags |= EFI_KEYWORD_FILTER_NUMERIC_1;
-        break;
-      case L'2':
-        *FilterFlags |= EFI_KEYWORD_FILTER_NUMERIC_2;
-        break;
-      case L'4':
-        *FilterFlags |= EFI_KEYWORD_FILTER_NUMERIC_4;
-        break;
-      case L'8':
-        *FilterFlags |= EFI_KEYWORD_FILTER_NUMERIC_8;
-        break;
-      default:
-        ASSERT (FALSE);
-        break;
+        case L'1':
+          *FilterFlags |= EFI_KEYWORD_FILTER_NUMERIC_1;
+          break;
+        case L'2':
+          *FilterFlags |= EFI_KEYWORD_FILTER_NUMERIC_2;
+          break;
+        case L'4':
+          *FilterFlags |= EFI_KEYWORD_FILTER_NUMERIC_4;
+          break;
+        case L'8':
+          *FilterFlags |= EFI_KEYWORD_FILTER_NUMERIC_8;
+          break;
+        default:
+          ASSERT (FALSE);
+          break;
       }
+
       String++;
     }
   } else {
@@ -447,7 +452,8 @@ ExtractFilter (
     // Check whether other filter item defined by Platform.
     //
     if ((StrnCmp (String, L"&PATH", StrLen (L"&PATH")) == 0) ||
-        (StrnCmp (String, L"&KEYWORD", StrLen (L"&KEYWORD")) == 0)) {
+        (StrnCmp (String, L"&KEYWORD", StrLen (L"&KEYWORD")) == 0))
+    {
       //
       // New KeywordRequest start, no platform defined filter.
       //
@@ -456,9 +462,9 @@ ExtractFilter (
       // Platform defined filter rule.
       // Just skip platform defined filter rule, return success.
       //
-      PathPtr = StrStr(String, L"&PATH");
-      KeywordPtr = StrStr(String, L"&KEYWORD");
-      if (PathPtr != NULL && KeywordPtr != NULL) {
+      PathPtr    = StrStr (String, L"&PATH");
+      KeywordPtr = StrStr (String, L"&KEYWORD");
+      if ((PathPtr != NULL) && (KeywordPtr != NULL)) {
         //
         // If both sections exist, return the first follow string.
         //
@@ -475,11 +481,12 @@ ExtractFilter (
         String = KeywordPtr;
       } else {
         //
-        // Only has paltform defined filter section, just skip it.
+        // Only has platform defined filter section, just skip it.
         //
         String += StrLen (String);
       }
     }
+
     RetVal = FALSE;
   }
 
@@ -501,14 +508,14 @@ ExtractFilter (
 **/
 BOOLEAN
 ExtractReadOnlyFromOpCode (
-  IN  UINT8         *OpCodeData
+  IN  UINT8  *OpCodeData
   )
 {
-  EFI_IFR_QUESTION_HEADER   *QuestionHdr;
+  EFI_IFR_QUESTION_HEADER  *QuestionHdr;
 
   ASSERT (OpCodeData != NULL);
 
-  QuestionHdr = (EFI_IFR_QUESTION_HEADER *) (OpCodeData + sizeof (EFI_IFR_OP_HEADER));
+  QuestionHdr = (EFI_IFR_QUESTION_HEADER *)(OpCodeData + sizeof (EFI_IFR_OP_HEADER));
 
   return (QuestionHdr->Flags & EFI_IFR_FLAG_READ_ONLY) != 0;
 }
@@ -518,9 +525,9 @@ ExtractReadOnlyFromOpCode (
 
   This is a internal function.
 
-  @param  OpCodeData             The questin binary ifr data.
+  @param  OpCodeData             The question binary ifr data.
   @param  KeywordRequest         KeywordRequestformat string.
-  @param  NextString             return the next string follow this keyword sectin.
+  @param  NextString             return the next string follow this keyword section.
   @param  ReadOnly               Return whether this question is read only.
 
   @retval KEYWORD_HANDLER_NO_ERROR                     Success validate.
@@ -529,26 +536,26 @@ ExtractReadOnlyFromOpCode (
 **/
 UINT32
 ValidateFilter (
-  IN  UINT8         *OpCodeData,
-  IN  CHAR16        *KeywordRequest,
-  OUT CHAR16        **NextString,
-  OUT BOOLEAN       *ReadOnly
+  IN  UINT8    *OpCodeData,
+  IN  CHAR16   *KeywordRequest,
+  OUT CHAR16   **NextString,
+  OUT BOOLEAN  *ReadOnly
   )
 {
-  CHAR16                    *NextFilter;
-  CHAR16                    *StringPtr;
-  UINT8                     FilterFlags;
-  EFI_IFR_QUESTION_HEADER   *QuestionHdr;
-  EFI_IFR_OP_HEADER         *OpCodeHdr;
-  UINT8                     Flags;
-  UINT32                    RetVal;
+  CHAR16                   *NextFilter;
+  CHAR16                   *StringPtr;
+  UINT8                    FilterFlags;
+  EFI_IFR_QUESTION_HEADER  *QuestionHdr;
+  EFI_IFR_OP_HEADER        *OpCodeHdr;
+  UINT8                    Flags;
+  UINT32                   RetVal;
 
-  RetVal = KEYWORD_HANDLER_NO_ERROR;
+  RetVal    = KEYWORD_HANDLER_NO_ERROR;
   StringPtr = KeywordRequest;
 
-  OpCodeHdr = (EFI_IFR_OP_HEADER *) OpCodeData;
-  QuestionHdr = (EFI_IFR_QUESTION_HEADER *) (OpCodeData + sizeof (EFI_IFR_OP_HEADER));
-  if (OpCodeHdr->OpCode == EFI_IFR_ONE_OF_OP || OpCodeHdr->OpCode == EFI_IFR_NUMERIC_OP) {
+  OpCodeHdr   = (EFI_IFR_OP_HEADER *)OpCodeData;
+  QuestionHdr = (EFI_IFR_QUESTION_HEADER *)(OpCodeData + sizeof (EFI_IFR_OP_HEADER));
+  if ((OpCodeHdr->OpCode == EFI_IFR_ONE_OF_OP) || (OpCodeHdr->OpCode == EFI_IFR_NUMERIC_OP)) {
     Flags = *(OpCodeData + sizeof (EFI_IFR_OP_HEADER) + sizeof (EFI_IFR_QUESTION_HEADER));
   } else {
     Flags = 0;
@@ -556,94 +563,103 @@ ValidateFilter (
 
   //
   // Get ReadOnly flag from Question.
-  // 
-  *ReadOnly = ExtractReadOnlyFromOpCode(OpCodeData);
+  //
+  *ReadOnly = ExtractReadOnlyFromOpCode (OpCodeData);
 
   while (ExtractFilter (StringPtr, &FilterFlags, &NextFilter)) {
     switch (FilterFlags) {
-    case EFI_KEYWORD_FILTER_READONY:
-      if ((QuestionHdr->Flags & EFI_IFR_FLAG_READ_ONLY) == 0) {
-        RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
-        goto Done;
-      }
-      break;
-
-    case EFI_KEYWORD_FILTER_REAWRITE:
-      if ((QuestionHdr->Flags & EFI_IFR_FLAG_READ_ONLY) != 0) {
-        RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
-        goto Done;
-      }
-      break;
-
-    case EFI_KEYWORD_FILTER_BUFFER:
-      //
-      // Only these three opcode use numeric value type.
-      //
-      if (OpCodeHdr->OpCode == EFI_IFR_ONE_OF_OP || OpCodeHdr->OpCode == EFI_IFR_NUMERIC_OP || OpCodeHdr->OpCode == EFI_IFR_CHECKBOX_OP) {
-        RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
-        goto Done;
-      }
-      break;
-
-    case EFI_KEYWORD_FILTER_NUMERIC:
-      if (OpCodeHdr->OpCode != EFI_IFR_ONE_OF_OP && OpCodeHdr->OpCode != EFI_IFR_NUMERIC_OP && OpCodeHdr->OpCode != EFI_IFR_CHECKBOX_OP) {
-        RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
-        goto Done;
-      }
-      break;
-
-    case EFI_KEYWORD_FILTER_NUMERIC_1:
-    case EFI_KEYWORD_FILTER_NUMERIC_2:
-    case EFI_KEYWORD_FILTER_NUMERIC_4:
-    case EFI_KEYWORD_FILTER_NUMERIC_8:
-      if (OpCodeHdr->OpCode != EFI_IFR_ONE_OF_OP && OpCodeHdr->OpCode != EFI_IFR_NUMERIC_OP && OpCodeHdr->OpCode != EFI_IFR_CHECKBOX_OP) {
-        RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
-        goto Done;
-      }
-
-      //
-      // For numeric and oneof, it has flags field to specify the detail numeric type.
-      //
-      if (OpCodeHdr->OpCode == EFI_IFR_ONE_OF_OP || OpCodeHdr->OpCode == EFI_IFR_NUMERIC_OP) {
-        switch (Flags & EFI_IFR_NUMERIC_SIZE) {
-        case EFI_IFR_NUMERIC_SIZE_1:
-          if (FilterFlags != EFI_KEYWORD_FILTER_NUMERIC_1) {
-            RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
-            goto Done;
-          }
-          break;
-
-        case EFI_IFR_NUMERIC_SIZE_2:
-          if (FilterFlags != EFI_KEYWORD_FILTER_NUMERIC_2) {
-            RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
-            goto Done;
-          }
-          break;
-
-        case EFI_IFR_NUMERIC_SIZE_4:
-          if (FilterFlags != EFI_KEYWORD_FILTER_NUMERIC_4) {
-            RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
-            goto Done;
-          }
-          break;
-
-        case EFI_IFR_NUMERIC_SIZE_8:
-          if (FilterFlags != EFI_KEYWORD_FILTER_NUMERIC_8) {
-            RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
-            goto Done;
-          }
-          break;
-
-        default:
-          ASSERT (FALSE);
-          break;
+      case EFI_KEYWORD_FILTER_READONY:
+        if ((QuestionHdr->Flags & EFI_IFR_FLAG_READ_ONLY) == 0) {
+          RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
+          goto Done;
         }
-      }
-      break;
 
-    default:
-      ASSERT (FALSE);
-      break;
+        break;
+
+      case EFI_KEYWORD_FILTER_REAWRITE:
+        if ((QuestionHdr->Flags & EFI_IFR_FLAG_READ_ONLY) != 0) {
+          RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
+          goto Done;
+        }
+
+        break;
+
+      case EFI_KEYWORD_FILTER_BUFFER:
+        //
+        // Only these three opcode use numeric value type.
+        //
+        if ((OpCodeHdr->OpCode == EFI_IFR_ONE_OF_OP) || (OpCodeHdr->OpCode == EFI_IFR_NUMERIC_OP) || (OpCodeHdr->OpCode == EFI_IFR_CHECKBOX_OP)) {
+          RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
+          goto Done;
+        }
+
+        break;
+
+      case EFI_KEYWORD_FILTER_NUMERIC:
+        if ((OpCodeHdr->OpCode != EFI_IFR_ONE_OF_OP) && (OpCodeHdr->OpCode != EFI_IFR_NUMERIC_OP) && (OpCodeHdr->OpCode != EFI_IFR_CHECKBOX_OP)) {
+          RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
+          goto Done;
+        }
+
+        break;
+
+      case EFI_KEYWORD_FILTER_NUMERIC_1:
+      case EFI_KEYWORD_FILTER_NUMERIC_2:
+      case EFI_KEYWORD_FILTER_NUMERIC_4:
+      case EFI_KEYWORD_FILTER_NUMERIC_8:
+        if ((OpCodeHdr->OpCode != EFI_IFR_ONE_OF_OP) && (OpCodeHdr->OpCode != EFI_IFR_NUMERIC_OP) && (OpCodeHdr->OpCode != EFI_IFR_CHECKBOX_OP)) {
+          RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
+          goto Done;
+        }
+
+        //
+        // For numeric and oneof, it has flags field to specify the detail numeric type.
+        //
+        if ((OpCodeHdr->OpCode == EFI_IFR_ONE_OF_OP) || (OpCodeHdr->OpCode == EFI_IFR_NUMERIC_OP)) {
+          switch (Flags & EFI_IFR_NUMERIC_SIZE) {
+            case EFI_IFR_NUMERIC_SIZE_1:
+              if (FilterFlags != EFI_KEYWORD_FILTER_NUMERIC_1) {
+                RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
+                goto Done;
+              }
+
+              break;
+
+            case EFI_IFR_NUMERIC_SIZE_2:
+              if (FilterFlags != EFI_KEYWORD_FILTER_NUMERIC_2) {
+                RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
+                goto Done;
+              }
+
+              break;
+
+            case EFI_IFR_NUMERIC_SIZE_4:
+              if (FilterFlags != EFI_KEYWORD_FILTER_NUMERIC_4) {
+                RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
+                goto Done;
+              }
+
+              break;
+
+            case EFI_IFR_NUMERIC_SIZE_8:
+              if (FilterFlags != EFI_KEYWORD_FILTER_NUMERIC_8) {
+                RetVal = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
+                goto Done;
+              }
+
+              break;
+
+            default:
+              ASSERT (FALSE);
+              break;
+          }
+        }
+
+        break;
+
+      default:
+        ASSERT (FALSE);
+        break;
     }
 
     //
@@ -651,7 +667,7 @@ ValidateFilter (
     //
     StringPtr = NextFilter;
   }
-  
+
 Done:
   //
   // The current filter which is processing.
@@ -673,23 +689,23 @@ Done:
 **/
 HII_DATABASE_RECORD *
 GetRecordFromDevicePath (
-  IN EFI_DEVICE_PATH_PROTOCOL   *DevicePath
+  IN EFI_DEVICE_PATH_PROTOCOL  *DevicePath
   )
 {
-  LIST_ENTRY             *Link;
-  UINT8                  *DevicePathPkg;
-  UINT8                  *CurrentDevicePath;
-  UINTN                  DevicePathSize;
-  HII_DATABASE_RECORD    *TempDatabase;
+  LIST_ENTRY           *Link;
+  UINT8                *DevicePathPkg;
+  UINT8                *CurrentDevicePath;
+  UINTN                DevicePathSize;
+  HII_DATABASE_RECORD  *TempDatabase;
 
   ASSERT (DevicePath != NULL);
 
   for (Link = mPrivate.DatabaseList.ForwardLink; Link != &mPrivate.DatabaseList; Link = Link->ForwardLink) {
-    TempDatabase = CR (Link, HII_DATABASE_RECORD, DatabaseEntry, HII_DATABASE_RECORD_SIGNATURE);
+    TempDatabase  = CR (Link, HII_DATABASE_RECORD, DatabaseEntry, HII_DATABASE_RECORD_SIGNATURE);
     DevicePathPkg = TempDatabase->PackageList->DevicePathPkg;
     if (DevicePathPkg != NULL) {
       CurrentDevicePath = DevicePathPkg + sizeof (EFI_HII_PACKAGE_HEADER);
-      DevicePathSize = GetDevicePathSize ((EFI_DEVICE_PATH_PROTOCOL *) CurrentDevicePath);
+      DevicePathSize    = GetDevicePathSize ((EFI_DEVICE_PATH_PROTOCOL *)CurrentDevicePath);
       if ((CompareMem (DevicePath, CurrentDevicePath, DevicePathSize) == 0)) {
         return TempDatabase;
       }
@@ -700,24 +716,24 @@ GetRecordFromDevicePath (
 }
 
 /**
-  Calculate the size of StringSrc and output it. Also copy string text from src 
+  Calculate the size of StringSrc and output it. Also copy string text from src
   to dest.
 
   This is a internal function.
 
   @param  StringSrc              Points to current null-terminated string.
   @param  BufferSize             Length of the buffer.
-  @param  StringDest             Buffer to store the string text. 
+  @param  StringDest             Buffer to store the string text.
 
-  @retval EFI_SUCCESS            The string text was outputed successfully.
+  @retval EFI_SUCCESS            The string text was outputted successfully.
   @retval EFI_OUT_OF_RESOURCES   Out of resource.
 
 **/
 EFI_STATUS
 GetUnicodeStringTextAndSize (
-  IN  UINT8            *StringSrc,
-  OUT UINTN            *BufferSize,
-  OUT EFI_STRING       *StringDest
+  IN  UINT8       *StringSrc,
+  OUT UINTN       *BufferSize,
+  OUT EFI_STRING  *StringDest
   )
 {
   UINTN  StringSize;
@@ -727,16 +743,16 @@ GetUnicodeStringTextAndSize (
 
   StringSize = sizeof (CHAR16);
   StringPtr  = StringSrc;
-  while (ReadUnaligned16 ((UINT16 *) StringPtr) != 0) {
+  while (ReadUnaligned16 ((UINT16 *)StringPtr) != 0) {
     StringSize += sizeof (CHAR16);
-    StringPtr += sizeof (CHAR16);
+    StringPtr  += sizeof (CHAR16);
   }
 
   *StringDest = AllocatePool (StringSize);
   if (*StringDest == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
-  
+
   CopyMem (*StringDest, StringSrc, StringSize);
 
   *BufferSize = StringSize;
@@ -760,235 +776,254 @@ GetUnicodeStringTextAndSize (
 **/
 EFI_STATUS
 GetStringIdFromString (
-  IN HII_STRING_PACKAGE_INSTANCE      *StringPackage,
-  IN CHAR16                           *KeywordValue,
-  OUT EFI_STRING_ID                   *StringId
+  IN HII_STRING_PACKAGE_INSTANCE  *StringPackage,
+  IN CHAR16                       *KeywordValue,
+  OUT EFI_STRING_ID               *StringId
   )
 {
-  UINT8                                *BlockHdr;
-  EFI_STRING_ID                        CurrentStringId;
-  UINTN                                BlockSize;
-  UINTN                                Index;
-  UINT8                                *StringTextPtr;
-  UINTN                                Offset;
-  UINT16                               StringCount;
-  UINT16                               SkipCount;
-  UINT8                                Length8;
-  EFI_HII_SIBT_EXT2_BLOCK              Ext2;
-  UINT32                               Length32;
-  UINTN                                StringSize;
-  CHAR16                               *String;
-  CHAR8                                *AsciiKeywordValue;
-  EFI_STATUS                           Status;
+  UINT8                    *BlockHdr;
+  EFI_STRING_ID            CurrentStringId;
+  UINTN                    BlockSize;
+  UINTN                    Index;
+  UINT8                    *StringTextPtr;
+  UINTN                    Offset;
+  UINT16                   StringCount;
+  UINT16                   SkipCount;
+  UINT8                    Length8;
+  EFI_HII_SIBT_EXT2_BLOCK  Ext2;
+  UINT32                   Length32;
+  UINTN                    StringSize;
+  CHAR16                   *String;
+  CHAR8                    *AsciiKeywordValue;
+  UINTN                    KeywordValueSize;
+  EFI_STATUS               Status;
 
   ASSERT (StringPackage != NULL && KeywordValue != NULL && StringId != NULL);
   ASSERT (StringPackage->Signature == HII_STRING_PACKAGE_SIGNATURE);
 
   CurrentStringId = 1;
-  Status = EFI_SUCCESS;
-  String = NULL;
-  BlockHdr = StringPackage->StringBlock;
-  BlockSize = 0;
-  Offset = 0;
+  Status          = EFI_SUCCESS;
+  String          = NULL;
+  BlockHdr        = StringPackage->StringBlock;
+  BlockSize       = 0;
+  Offset          = 0;
 
   //
   // Make a ascii keyword value for later use.
   //
-  AsciiKeywordValue = AllocatePool (StrLen (KeywordValue) + 1);
+  KeywordValueSize  = StrLen (KeywordValue) + 1;
+  AsciiKeywordValue = AllocatePool (KeywordValueSize);
   if (AsciiKeywordValue == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
-  UnicodeStrToAsciiStr(KeywordValue, AsciiKeywordValue);
+
+  UnicodeStrToAsciiStrS (KeywordValue, AsciiKeywordValue, KeywordValueSize);
 
   while (*BlockHdr != EFI_HII_SIBT_END) {
     switch (*BlockHdr) {
-    case EFI_HII_SIBT_STRING_SCSU:
-      Offset = sizeof (EFI_HII_STRING_BLOCK);
-      StringTextPtr = BlockHdr + Offset;
-      BlockSize += Offset + AsciiStrSize ((CHAR8 *) StringTextPtr);
-      if (AsciiStrCmp(AsciiKeywordValue, (CHAR8 *) StringTextPtr) == 0) {
-        *StringId = CurrentStringId;
-        goto Done;
-      }
-      CurrentStringId++;
-      break;
-
-    case EFI_HII_SIBT_STRING_SCSU_FONT:
-      Offset = sizeof (EFI_HII_SIBT_STRING_SCSU_FONT_BLOCK) - sizeof (UINT8);
-      StringTextPtr = BlockHdr + Offset;
-      if (AsciiStrCmp(AsciiKeywordValue, (CHAR8 *) StringTextPtr) == 0) {
-        *StringId = CurrentStringId;
-        goto Done;
-      }
-      BlockSize += Offset + AsciiStrSize ((CHAR8 *) StringTextPtr);
-      CurrentStringId++;
-      break;
-
-    case EFI_HII_SIBT_STRINGS_SCSU:
-      CopyMem (&StringCount, BlockHdr + sizeof (EFI_HII_STRING_BLOCK), sizeof (UINT16));
-      StringTextPtr = (UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_SIBT_STRINGS_SCSU_BLOCK) - sizeof (UINT8));
-      BlockSize += StringTextPtr - BlockHdr;
-
-      for (Index = 0; Index < StringCount; Index++) {
-        BlockSize += AsciiStrSize ((CHAR8 *) StringTextPtr);
-        if (AsciiStrCmp(AsciiKeywordValue, (CHAR8 *) StringTextPtr) == 0) {
+      case EFI_HII_SIBT_STRING_SCSU:
+        Offset        = sizeof (EFI_HII_STRING_BLOCK);
+        StringTextPtr = BlockHdr + Offset;
+        BlockSize    += Offset + AsciiStrSize ((CHAR8 *)StringTextPtr);
+        if (AsciiStrCmp (AsciiKeywordValue, (CHAR8 *)StringTextPtr) == 0) {
           *StringId = CurrentStringId;
           goto Done;
         }
-        StringTextPtr = StringTextPtr + AsciiStrSize ((CHAR8 *) StringTextPtr);
+
         CurrentStringId++;
-      }
-      break;
+        break;
 
-    case EFI_HII_SIBT_STRINGS_SCSU_FONT:
-      CopyMem (
-        &StringCount,
-        (UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
-        sizeof (UINT16)
-        );
-      StringTextPtr = (UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_SIBT_STRINGS_SCSU_FONT_BLOCK) - sizeof (UINT8));
-      BlockSize += StringTextPtr - BlockHdr;
-
-      for (Index = 0; Index < StringCount; Index++) {
-        BlockSize += AsciiStrSize ((CHAR8 *) StringTextPtr);
-        if (AsciiStrCmp(AsciiKeywordValue, (CHAR8 *) StringTextPtr) == 0) {
+      case EFI_HII_SIBT_STRING_SCSU_FONT:
+        Offset        = sizeof (EFI_HII_SIBT_STRING_SCSU_FONT_BLOCK) - sizeof (UINT8);
+        StringTextPtr = BlockHdr + Offset;
+        if (AsciiStrCmp (AsciiKeywordValue, (CHAR8 *)StringTextPtr) == 0) {
           *StringId = CurrentStringId;
           goto Done;
         }
-        StringTextPtr = StringTextPtr + AsciiStrSize ((CHAR8 *) StringTextPtr);
+
+        BlockSize += Offset + AsciiStrSize ((CHAR8 *)StringTextPtr);
         CurrentStringId++;
-      }
-      break;
+        break;
 
-    case EFI_HII_SIBT_STRING_UCS2:
-      Offset        = sizeof (EFI_HII_STRING_BLOCK);
-      StringTextPtr = BlockHdr + Offset;
-      //
-      // Use StringSize to store the size of the specified string, including the NULL
-      // terminator.
-      //
-      Status = GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);
-      if (EFI_ERROR (Status)) {
-        goto Done;
-      }
-      
-      if (StrCmp(KeywordValue, String) == 0) {
-        *StringId = CurrentStringId;
-        goto Done;
-      }
-      BlockSize += Offset + StringSize;
-      CurrentStringId++;
-      break;
+      case EFI_HII_SIBT_STRINGS_SCSU:
+        CopyMem (&StringCount, BlockHdr + sizeof (EFI_HII_STRING_BLOCK), sizeof (UINT16));
+        StringTextPtr = (UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_SIBT_STRINGS_SCSU_BLOCK) - sizeof (UINT8));
+        BlockSize    += StringTextPtr - BlockHdr;
 
-    case EFI_HII_SIBT_STRING_UCS2_FONT:
-      Offset = sizeof (EFI_HII_SIBT_STRING_UCS2_FONT_BLOCK)  - sizeof (CHAR16);
-      StringTextPtr = BlockHdr + Offset;
-      //
-      // Use StringSize to store the size of the specified string, including the NULL
-      // terminator.
-      //
-      Status = GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);
-      if (EFI_ERROR (Status)) {
-        goto Done;
-      }
-      
-      if (StrCmp(KeywordValue, String) == 0) {
-        *StringId = CurrentStringId;
-        goto Done;
-      }
-      BlockSize += Offset + StringSize;
-      CurrentStringId++;
-      break;
+        for (Index = 0; Index < StringCount; Index++) {
+          BlockSize += AsciiStrSize ((CHAR8 *)StringTextPtr);
+          if (AsciiStrCmp (AsciiKeywordValue, (CHAR8 *)StringTextPtr) == 0) {
+            *StringId = CurrentStringId;
+            goto Done;
+          }
 
-    case EFI_HII_SIBT_STRINGS_UCS2:
-      Offset = sizeof (EFI_HII_SIBT_STRINGS_UCS2_BLOCK) - sizeof (CHAR16);
-      StringTextPtr = BlockHdr + Offset;
-      BlockSize += Offset;
-      CopyMem (&StringCount, BlockHdr + sizeof (EFI_HII_STRING_BLOCK), sizeof (UINT16));
-      for (Index = 0; Index < StringCount; Index++) {
+          StringTextPtr = StringTextPtr + AsciiStrSize ((CHAR8 *)StringTextPtr);
+          CurrentStringId++;
+        }
+
+        break;
+
+      case EFI_HII_SIBT_STRINGS_SCSU_FONT:
+        CopyMem (
+          &StringCount,
+          (UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
+          sizeof (UINT16)
+          );
+        StringTextPtr = (UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_SIBT_STRINGS_SCSU_FONT_BLOCK) - sizeof (UINT8));
+        BlockSize    += StringTextPtr - BlockHdr;
+
+        for (Index = 0; Index < StringCount; Index++) {
+          BlockSize += AsciiStrSize ((CHAR8 *)StringTextPtr);
+          if (AsciiStrCmp (AsciiKeywordValue, (CHAR8 *)StringTextPtr) == 0) {
+            *StringId = CurrentStringId;
+            goto Done;
+          }
+
+          StringTextPtr = StringTextPtr + AsciiStrSize ((CHAR8 *)StringTextPtr);
+          CurrentStringId++;
+        }
+
+        break;
+
+      case EFI_HII_SIBT_STRING_UCS2:
+        Offset        = sizeof (EFI_HII_STRING_BLOCK);
+        StringTextPtr = BlockHdr + Offset;
+        //
+        // Use StringSize to store the size of the specified string, including the NULL
+        // terminator.
+        //
         Status = GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);
         if (EFI_ERROR (Status)) {
           goto Done;
         }
 
-        BlockSize += StringSize;
-        if (StrCmp(KeywordValue, String) == 0) {
+        ASSERT (String != NULL);
+        if (StrCmp (KeywordValue, String) == 0) {
           *StringId = CurrentStringId;
           goto Done;
         }
-        StringTextPtr = StringTextPtr + StringSize;
-        CurrentStringId++;
-      }
-      break;
 
-    case EFI_HII_SIBT_STRINGS_UCS2_FONT:
-      Offset = sizeof (EFI_HII_SIBT_STRINGS_UCS2_FONT_BLOCK) - sizeof (CHAR16);
-      StringTextPtr = BlockHdr + Offset;
-      BlockSize += Offset;
-      CopyMem (
-        &StringCount,
-        (UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
-        sizeof (UINT16)
-        );
-      for (Index = 0; Index < StringCount; Index++) {
+        BlockSize += Offset + StringSize;
+        CurrentStringId++;
+        break;
+
+      case EFI_HII_SIBT_STRING_UCS2_FONT:
+        Offset        = sizeof (EFI_HII_SIBT_STRING_UCS2_FONT_BLOCK)  - sizeof (CHAR16);
+        StringTextPtr = BlockHdr + Offset;
+        //
+        // Use StringSize to store the size of the specified string, including the NULL
+        // terminator.
+        //
         Status = GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);
         if (EFI_ERROR (Status)) {
           goto Done;
         }
 
-        BlockSize += StringSize;
-        if (StrCmp(KeywordValue, String) == 0) {
+        ASSERT (String != NULL);
+        if (StrCmp (KeywordValue, String) == 0) {
           *StringId = CurrentStringId;
           goto Done;
         }
-        StringTextPtr = StringTextPtr + StringSize;
+
+        BlockSize += Offset + StringSize;
         CurrentStringId++;
-      }
-      break;
+        break;
 
-    case EFI_HII_SIBT_DUPLICATE:
-      BlockSize       += sizeof (EFI_HII_SIBT_DUPLICATE_BLOCK);
-      CurrentStringId++;
-      break;
+      case EFI_HII_SIBT_STRINGS_UCS2:
+        Offset        = sizeof (EFI_HII_SIBT_STRINGS_UCS2_BLOCK) - sizeof (CHAR16);
+        StringTextPtr = BlockHdr + Offset;
+        BlockSize    += Offset;
+        CopyMem (&StringCount, BlockHdr + sizeof (EFI_HII_STRING_BLOCK), sizeof (UINT16));
+        for (Index = 0; Index < StringCount; Index++) {
+          Status = GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);
+          if (EFI_ERROR (Status)) {
+            goto Done;
+          }
 
-    case EFI_HII_SIBT_SKIP1:
-      SkipCount = (UINT16) (*(UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK)));
-      CurrentStringId = (UINT16) (CurrentStringId + SkipCount);
-      BlockSize       +=  sizeof (EFI_HII_SIBT_SKIP1_BLOCK);
-      break;
+          ASSERT (String != NULL);
+          BlockSize += StringSize;
+          if (StrCmp (KeywordValue, String) == 0) {
+            *StringId = CurrentStringId;
+            goto Done;
+          }
 
-    case EFI_HII_SIBT_SKIP2:
-      CopyMem (&SkipCount, BlockHdr + sizeof (EFI_HII_STRING_BLOCK), sizeof (UINT16));
-      CurrentStringId = (UINT16) (CurrentStringId + SkipCount);
-      BlockSize       +=  sizeof (EFI_HII_SIBT_SKIP2_BLOCK);
-      break;
+          StringTextPtr = StringTextPtr + StringSize;
+          CurrentStringId++;
+        }
 
-    case EFI_HII_SIBT_EXT1:
-      CopyMem (
-        &Length8,
-        (UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
-        sizeof (UINT8)
-        );
-      BlockSize += Length8;
-      break;
+        break;
 
-    case EFI_HII_SIBT_EXT2:
-      CopyMem (&Ext2, BlockHdr, sizeof (EFI_HII_SIBT_EXT2_BLOCK));
-      BlockSize += Ext2.Length;
-      break;
+      case EFI_HII_SIBT_STRINGS_UCS2_FONT:
+        Offset        = sizeof (EFI_HII_SIBT_STRINGS_UCS2_FONT_BLOCK) - sizeof (CHAR16);
+        StringTextPtr = BlockHdr + Offset;
+        BlockSize    += Offset;
+        CopyMem (
+          &StringCount,
+          (UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
+          sizeof (UINT16)
+          );
+        for (Index = 0; Index < StringCount; Index++) {
+          Status = GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);
+          if (EFI_ERROR (Status)) {
+            goto Done;
+          }
 
-    case EFI_HII_SIBT_EXT4:
-      CopyMem (
-        &Length32,
-        (UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
-        sizeof (UINT32)
-        );
+          ASSERT (String != NULL);
+          BlockSize += StringSize;
+          if (StrCmp (KeywordValue, String) == 0) {
+            *StringId = CurrentStringId;
+            goto Done;
+          }
 
-      BlockSize += Length32;
-      break;
+          StringTextPtr = StringTextPtr + StringSize;
+          CurrentStringId++;
+        }
 
-    default:
-      break;
+        break;
+
+      case EFI_HII_SIBT_DUPLICATE:
+        BlockSize += sizeof (EFI_HII_SIBT_DUPLICATE_BLOCK);
+        CurrentStringId++;
+        break;
+
+      case EFI_HII_SIBT_SKIP1:
+        SkipCount       = (UINT16)(*(UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK)));
+        CurrentStringId = (UINT16)(CurrentStringId + SkipCount);
+        BlockSize      +=  sizeof (EFI_HII_SIBT_SKIP1_BLOCK);
+        break;
+
+      case EFI_HII_SIBT_SKIP2:
+        CopyMem (&SkipCount, BlockHdr + sizeof (EFI_HII_STRING_BLOCK), sizeof (UINT16));
+        CurrentStringId = (UINT16)(CurrentStringId + SkipCount);
+        BlockSize      +=  sizeof (EFI_HII_SIBT_SKIP2_BLOCK);
+        break;
+
+      case EFI_HII_SIBT_EXT1:
+        CopyMem (
+          &Length8,
+          (UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
+          sizeof (UINT8)
+          );
+        BlockSize += Length8;
+        break;
+
+      case EFI_HII_SIBT_EXT2:
+        CopyMem (&Ext2, BlockHdr, sizeof (EFI_HII_SIBT_EXT2_BLOCK));
+        BlockSize += Ext2.Length;
+        break;
+
+      case EFI_HII_SIBT_EXT4:
+        CopyMem (
+          &Length32,
+          (UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
+          sizeof (UINT32)
+          );
+
+        BlockSize += Length32;
+        break;
+
+      default:
+        break;
     }
 
     if (String != NULL) {
@@ -996,7 +1031,7 @@ GetStringIdFromString (
       String = NULL;
     }
 
-    BlockHdr  = StringPackage->StringBlock + BlockSize;
+    BlockHdr = StringPackage->StringBlock + BlockSize;
   }
 
   Status = EFI_NOT_FOUND;
@@ -1005,9 +1040,11 @@ Done:
   if (AsciiKeywordValue != NULL) {
     FreePool (AsciiKeywordValue);
   }
+
   if (String != NULL) {
     FreePool (String);
   }
+
   return Status;
 }
 
@@ -1025,32 +1062,32 @@ Done:
 **/
 EFI_STRING_ID
 GetNextStringId (
-  IN  HII_STRING_PACKAGE_INSTANCE      *StringPackage,
-  IN  EFI_STRING_ID                    StringId,
-  OUT EFI_STRING                       *KeywordValue
+  IN  HII_STRING_PACKAGE_INSTANCE  *StringPackage,
+  IN  EFI_STRING_ID                StringId,
+  OUT EFI_STRING                   *KeywordValue
   )
 {
-  UINT8                                *BlockHdr;
-  EFI_STRING_ID                        CurrentStringId;
-  UINTN                                BlockSize;
-  UINTN                                Index;
-  UINT8                                *StringTextPtr;
-  UINTN                                Offset;
-  UINT16                               StringCount;
-  UINT16                               SkipCount;
-  UINT8                                Length8;
-  EFI_HII_SIBT_EXT2_BLOCK              Ext2;
-  UINT32                               Length32;
-  BOOLEAN                              FindString;
-  UINTN                                StringSize;
-  CHAR16                               *String;
+  UINT8                    *BlockHdr;
+  EFI_STRING_ID            CurrentStringId;
+  UINTN                    BlockSize;
+  UINTN                    Index;
+  UINT8                    *StringTextPtr;
+  UINTN                    Offset;
+  UINT16                   StringCount;
+  UINT16                   SkipCount;
+  UINT8                    Length8;
+  EFI_HII_SIBT_EXT2_BLOCK  Ext2;
+  UINT32                   Length32;
+  BOOLEAN                  FindString;
+  UINTN                    StringSize;
+  CHAR16                   *String;
 
   ASSERT (StringPackage != NULL);
   ASSERT (StringPackage->Signature == HII_STRING_PACKAGE_SIGNATURE);
 
   CurrentStringId = 1;
-  FindString = FALSE;
-  String = NULL;
+  FindString      = FALSE;
+  String          = NULL;
 
   //
   // Parse the string blocks to get the string text and font.
@@ -1060,168 +1097,135 @@ GetNextStringId (
   Offset    = 0;
   while (*BlockHdr != EFI_HII_SIBT_END) {
     switch (*BlockHdr) {
-    case EFI_HII_SIBT_STRING_SCSU:
-      Offset = sizeof (EFI_HII_STRING_BLOCK);
-      StringTextPtr = BlockHdr + Offset;
-      
-      if (FindString) {
-        *KeywordValue = AllocatePool (AsciiStrSize ((CHAR8 *) StringTextPtr) * sizeof (CHAR16));
-        if (*KeywordValue == NULL) {
-          return 0;
-        }
-        AsciiStrToUnicodeStr ((CHAR8 *) StringTextPtr, *KeywordValue);
-        return CurrentStringId;
-      } else if (CurrentStringId == StringId) {
-        FindString = TRUE;
-      }
+      case EFI_HII_SIBT_STRING_SCSU:
+        Offset        = sizeof (EFI_HII_STRING_BLOCK);
+        StringTextPtr = BlockHdr + Offset;
 
-      BlockSize += Offset + AsciiStrSize ((CHAR8 *) StringTextPtr);
-      CurrentStringId++;
-      break;
-
-    case EFI_HII_SIBT_STRING_SCSU_FONT:
-      Offset = sizeof (EFI_HII_SIBT_STRING_SCSU_FONT_BLOCK) - sizeof (UINT8);
-      StringTextPtr = BlockHdr + Offset;
-      
-      if (FindString) {
-        *KeywordValue = AllocatePool (AsciiStrSize ((CHAR8 *) StringTextPtr) * sizeof (CHAR16));
-        if (*KeywordValue == NULL) {
-          return 0;
-        }
-        AsciiStrToUnicodeStr ((CHAR8 *) StringTextPtr, *KeywordValue);
-        return CurrentStringId;
-      } else if (CurrentStringId == StringId) {
-        FindString = TRUE;
-      }
-
-      BlockSize += Offset + AsciiStrSize ((CHAR8 *) StringTextPtr);
-      CurrentStringId++;
-      break;
-
-    case EFI_HII_SIBT_STRINGS_SCSU:
-      CopyMem (&StringCount, BlockHdr + sizeof (EFI_HII_STRING_BLOCK), sizeof (UINT16));
-      StringTextPtr = (UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_SIBT_STRINGS_SCSU_BLOCK) - sizeof (UINT8));
-      BlockSize += StringTextPtr - BlockHdr;
-
-      for (Index = 0; Index < StringCount; Index++) {
         if (FindString) {
-          *KeywordValue = AllocatePool (AsciiStrSize ((CHAR8 *) StringTextPtr) * sizeof (CHAR16));
+          StringSize    = AsciiStrSize ((CHAR8 *)StringTextPtr);
+          *KeywordValue = AllocatePool (StringSize * sizeof (CHAR16));
           if (*KeywordValue == NULL) {
             return 0;
           }
-          AsciiStrToUnicodeStr ((CHAR8 *) StringTextPtr, *KeywordValue);
+
+          AsciiStrToUnicodeStrS ((CHAR8 *)StringTextPtr, *KeywordValue, StringSize);
           return CurrentStringId;
         } else if (CurrentStringId == StringId) {
           FindString = TRUE;
         }
 
-        BlockSize += AsciiStrSize ((CHAR8 *) StringTextPtr);
-        StringTextPtr = StringTextPtr + AsciiStrSize ((CHAR8 *) StringTextPtr);
+        BlockSize += Offset + AsciiStrSize ((CHAR8 *)StringTextPtr);
         CurrentStringId++;
-      }
-      break;
+        break;
 
-    case EFI_HII_SIBT_STRINGS_SCSU_FONT:
-      CopyMem (
-        &StringCount,
-        (UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
-        sizeof (UINT16)
-        );
-      StringTextPtr = (UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_SIBT_STRINGS_SCSU_FONT_BLOCK) - sizeof (UINT8));
-      BlockSize += StringTextPtr - BlockHdr;
+      case EFI_HII_SIBT_STRING_SCSU_FONT:
+        Offset        = sizeof (EFI_HII_SIBT_STRING_SCSU_FONT_BLOCK) - sizeof (UINT8);
+        StringTextPtr = BlockHdr + Offset;
 
-      for (Index = 0; Index < StringCount; Index++) {
         if (FindString) {
-          *KeywordValue = AllocatePool (AsciiStrSize ((CHAR8 *) StringTextPtr) * sizeof (CHAR16));
+          StringSize    = AsciiStrSize ((CHAR8 *)StringTextPtr);
+          *KeywordValue = AllocatePool (StringSize * sizeof (CHAR16));
           if (*KeywordValue == NULL) {
             return 0;
           }
-          AsciiStrToUnicodeStr ((CHAR8 *) StringTextPtr, *KeywordValue);
+
+          AsciiStrToUnicodeStrS ((CHAR8 *)StringTextPtr, *KeywordValue, StringSize);
           return CurrentStringId;
         } else if (CurrentStringId == StringId) {
           FindString = TRUE;
         }
 
-        BlockSize += AsciiStrSize ((CHAR8 *) StringTextPtr);
-        StringTextPtr = StringTextPtr + AsciiStrSize ((CHAR8 *) StringTextPtr);
+        BlockSize += Offset + AsciiStrSize ((CHAR8 *)StringTextPtr);
         CurrentStringId++;
-      }
-      break;
+        break;
 
-    case EFI_HII_SIBT_STRING_UCS2:
-      Offset        = sizeof (EFI_HII_STRING_BLOCK);
-      StringTextPtr = BlockHdr + Offset;
-      //
-      // Use StringSize to store the size of the specified string, including the NULL
-      // terminator.
-      //
-      GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);
-      if (FindString && (String != NULL) && (*String != L'\0')) {
+      case EFI_HII_SIBT_STRINGS_SCSU:
+        CopyMem (&StringCount, BlockHdr + sizeof (EFI_HII_STRING_BLOCK), sizeof (UINT16));
+        StringTextPtr = (UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_SIBT_STRINGS_SCSU_BLOCK) - sizeof (UINT8));
+        BlockSize    += StringTextPtr - BlockHdr;
+
+        for (Index = 0; Index < StringCount; Index++) {
+          if (FindString) {
+            StringSize    = AsciiStrSize ((CHAR8 *)StringTextPtr);
+            *KeywordValue = AllocatePool (StringSize * sizeof (CHAR16));
+            if (*KeywordValue == NULL) {
+              return 0;
+            }
+
+            AsciiStrToUnicodeStrS ((CHAR8 *)StringTextPtr, *KeywordValue, StringSize);
+            return CurrentStringId;
+          } else if (CurrentStringId == StringId) {
+            FindString = TRUE;
+          }
+
+          BlockSize    += AsciiStrSize ((CHAR8 *)StringTextPtr);
+          StringTextPtr = StringTextPtr + AsciiStrSize ((CHAR8 *)StringTextPtr);
+          CurrentStringId++;
+        }
+
+        break;
+
+      case EFI_HII_SIBT_STRINGS_SCSU_FONT:
+        CopyMem (
+          &StringCount,
+          (UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
+          sizeof (UINT16)
+          );
+        StringTextPtr = (UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_SIBT_STRINGS_SCSU_FONT_BLOCK) - sizeof (UINT8));
+        BlockSize    += StringTextPtr - BlockHdr;
+
+        for (Index = 0; Index < StringCount; Index++) {
+          if (FindString) {
+            StringSize    = AsciiStrSize ((CHAR8 *)StringTextPtr);
+            *KeywordValue = AllocatePool (StringSize * sizeof (CHAR16));
+            if (*KeywordValue == NULL) {
+              return 0;
+            }
+
+            AsciiStrToUnicodeStrS ((CHAR8 *)StringTextPtr, *KeywordValue, StringSize);
+            return CurrentStringId;
+          } else if (CurrentStringId == StringId) {
+            FindString = TRUE;
+          }
+
+          BlockSize    += AsciiStrSize ((CHAR8 *)StringTextPtr);
+          StringTextPtr = StringTextPtr + AsciiStrSize ((CHAR8 *)StringTextPtr);
+          CurrentStringId++;
+        }
+
+        break;
+
+      case EFI_HII_SIBT_STRING_UCS2:
+        Offset        = sizeof (EFI_HII_STRING_BLOCK);
+        StringTextPtr = BlockHdr + Offset;
         //
-        // String protocol use this type for the string id which has value for other package.
-        // It will allocate an empty string block for this string id. so here we also check
-        // *String != L'\0' to prohibit this case.
+        // Use StringSize to store the size of the specified string, including the NULL
+        // terminator.
         //
-        *KeywordValue = String;
-        return CurrentStringId;
-      } else if (CurrentStringId == StringId) {
-        FindString = TRUE;
-      }
-
-      BlockSize += Offset + StringSize;
-      CurrentStringId++;
-      break;
-
-    case EFI_HII_SIBT_STRING_UCS2_FONT:
-      Offset = sizeof (EFI_HII_SIBT_STRING_UCS2_FONT_BLOCK)  - sizeof (CHAR16);
-      StringTextPtr = BlockHdr + Offset;
-      //
-      // Use StringSize to store the size of the specified string, including the NULL
-      // terminator.
-      //
-      GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);
-      if (FindString) {
-        *KeywordValue = String;
-        return CurrentStringId;
-      } else if (CurrentStringId == StringId) {
-        FindString = TRUE;
-      }
-
-      BlockSize += Offset + StringSize;
-      CurrentStringId++;
-      break;
-
-    case EFI_HII_SIBT_STRINGS_UCS2:
-      Offset = sizeof (EFI_HII_SIBT_STRINGS_UCS2_BLOCK) - sizeof (CHAR16);
-      StringTextPtr = BlockHdr + Offset;
-      BlockSize += Offset;
-      CopyMem (&StringCount, BlockHdr + sizeof (EFI_HII_STRING_BLOCK), sizeof (UINT16));
-      for (Index = 0; Index < StringCount; Index++) {
-        GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);        
-
-        if (FindString) {
+        GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);
+        if (FindString && (String != NULL) && (*String != L'\0')) {
+          //
+          // String protocol use this type for the string id which has value for other package.
+          // It will allocate an empty string block for this string id. so here we also check
+          // *String != L'\0' to prohibit this case.
+          //
           *KeywordValue = String;
           return CurrentStringId;
         } else if (CurrentStringId == StringId) {
           FindString = TRUE;
         }
 
-        BlockSize += StringSize;
-        StringTextPtr = StringTextPtr + StringSize;
+        BlockSize += Offset + StringSize;
         CurrentStringId++;
-      }
-      break;
+        break;
 
-    case EFI_HII_SIBT_STRINGS_UCS2_FONT:
-      Offset = sizeof (EFI_HII_SIBT_STRINGS_UCS2_FONT_BLOCK) - sizeof (CHAR16);
-      StringTextPtr = BlockHdr + Offset;
-      BlockSize += Offset;
-      CopyMem (
-        &StringCount,
-        (UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
-        sizeof (UINT16)
-        );
-      for (Index = 0; Index < StringCount; Index++) {
+      case EFI_HII_SIBT_STRING_UCS2_FONT:
+        Offset        = sizeof (EFI_HII_SIBT_STRING_UCS2_FONT_BLOCK)  - sizeof (CHAR16);
+        StringTextPtr = BlockHdr + Offset;
+        //
+        // Use StringSize to store the size of the specified string, including the NULL
+        // terminator.
+        //
         GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);
         if (FindString) {
           *KeywordValue = String;
@@ -1230,55 +1234,100 @@ GetNextStringId (
           FindString = TRUE;
         }
 
-        BlockSize += StringSize;
-        StringTextPtr = StringTextPtr + StringSize;
+        BlockSize += Offset + StringSize;
         CurrentStringId++;
-      }
-      break;
+        break;
 
-    case EFI_HII_SIBT_DUPLICATE:
-      BlockSize       += sizeof (EFI_HII_SIBT_DUPLICATE_BLOCK);
-      CurrentStringId++;
-      break;
+      case EFI_HII_SIBT_STRINGS_UCS2:
+        Offset        = sizeof (EFI_HII_SIBT_STRINGS_UCS2_BLOCK) - sizeof (CHAR16);
+        StringTextPtr = BlockHdr + Offset;
+        BlockSize    += Offset;
+        CopyMem (&StringCount, BlockHdr + sizeof (EFI_HII_STRING_BLOCK), sizeof (UINT16));
+        for (Index = 0; Index < StringCount; Index++) {
+          GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);
 
-    case EFI_HII_SIBT_SKIP1:
-      SkipCount = (UINT16) (*(UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK)));
-      CurrentStringId = (UINT16) (CurrentStringId + SkipCount);
-      BlockSize       +=  sizeof (EFI_HII_SIBT_SKIP1_BLOCK);
-      break;
+          if (FindString) {
+            *KeywordValue = String;
+            return CurrentStringId;
+          } else if (CurrentStringId == StringId) {
+            FindString = TRUE;
+          }
 
-    case EFI_HII_SIBT_SKIP2:
-      CopyMem (&SkipCount, BlockHdr + sizeof (EFI_HII_STRING_BLOCK), sizeof (UINT16));
-      CurrentStringId = (UINT16) (CurrentStringId + SkipCount);
-      BlockSize       +=  sizeof (EFI_HII_SIBT_SKIP2_BLOCK);
-      break;
+          BlockSize    += StringSize;
+          StringTextPtr = StringTextPtr + StringSize;
+          CurrentStringId++;
+        }
 
-    case EFI_HII_SIBT_EXT1:
-      CopyMem (
-        &Length8,
-        (UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
-        sizeof (UINT8)
-        );
-      BlockSize += Length8;
-      break;
+        break;
 
-    case EFI_HII_SIBT_EXT2:
-      CopyMem (&Ext2, BlockHdr, sizeof (EFI_HII_SIBT_EXT2_BLOCK));
-      BlockSize += Ext2.Length;
-      break;
+      case EFI_HII_SIBT_STRINGS_UCS2_FONT:
+        Offset        = sizeof (EFI_HII_SIBT_STRINGS_UCS2_FONT_BLOCK) - sizeof (CHAR16);
+        StringTextPtr = BlockHdr + Offset;
+        BlockSize    += Offset;
+        CopyMem (
+          &StringCount,
+          (UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
+          sizeof (UINT16)
+          );
+        for (Index = 0; Index < StringCount; Index++) {
+          GetUnicodeStringTextAndSize (StringTextPtr, &StringSize, &String);
+          if (FindString) {
+            *KeywordValue = String;
+            return CurrentStringId;
+          } else if (CurrentStringId == StringId) {
+            FindString = TRUE;
+          }
 
-    case EFI_HII_SIBT_EXT4:
-      CopyMem (
-        &Length32,
-        (UINT8*)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
-        sizeof (UINT32)
-        );
+          BlockSize    += StringSize;
+          StringTextPtr = StringTextPtr + StringSize;
+          CurrentStringId++;
+        }
 
-      BlockSize += Length32;
-      break;
+        break;
 
-    default:
-      break;
+      case EFI_HII_SIBT_DUPLICATE:
+        BlockSize += sizeof (EFI_HII_SIBT_DUPLICATE_BLOCK);
+        CurrentStringId++;
+        break;
+
+      case EFI_HII_SIBT_SKIP1:
+        SkipCount       = (UINT16)(*(UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK)));
+        CurrentStringId = (UINT16)(CurrentStringId + SkipCount);
+        BlockSize      +=  sizeof (EFI_HII_SIBT_SKIP1_BLOCK);
+        break;
+
+      case EFI_HII_SIBT_SKIP2:
+        CopyMem (&SkipCount, BlockHdr + sizeof (EFI_HII_STRING_BLOCK), sizeof (UINT16));
+        CurrentStringId = (UINT16)(CurrentStringId + SkipCount);
+        BlockSize      +=  sizeof (EFI_HII_SIBT_SKIP2_BLOCK);
+        break;
+
+      case EFI_HII_SIBT_EXT1:
+        CopyMem (
+          &Length8,
+          (UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
+          sizeof (UINT8)
+          );
+        BlockSize += Length8;
+        break;
+
+      case EFI_HII_SIBT_EXT2:
+        CopyMem (&Ext2, BlockHdr, sizeof (EFI_HII_SIBT_EXT2_BLOCK));
+        BlockSize += Ext2.Length;
+        break;
+
+      case EFI_HII_SIBT_EXT4:
+        CopyMem (
+          &Length32,
+          (UINT8 *)((UINTN)BlockHdr + sizeof (EFI_HII_STRING_BLOCK) + sizeof (UINT8)),
+          sizeof (UINT32)
+          );
+
+        BlockSize += Length32;
+        break;
+
+      default:
+        break;
     }
 
     if (String != NULL) {
@@ -1286,7 +1335,7 @@ GetNextStringId (
       String = NULL;
     }
 
-    BlockHdr  = StringPackage->StringBlock + BlockSize;
+    BlockHdr = StringPackage->StringBlock + BlockSize;
   }
 
   return 0;
@@ -1302,7 +1351,7 @@ GetNextStringId (
   @param  KeywordValue                   Keyword value.
   @param  StringId                       String Id for this keyword.
 
-  @retval KEYWORD_HANDLER_NO_ERROR                     Get String id succes.
+  @retval KEYWORD_HANDLER_NO_ERROR                     Get String id successfully.
   @retval KEYWORD_HANDLER_KEYWORD_NOT_FOUND            Not found the string id in the string package.
   @retval KEYWORD_HANDLER_NAMESPACE_ID_NOT_FOUND       Not found the string package for this namespace.
   @retval KEYWORD_HANDLER_UNDEFINED_PROCESSING_ERROR   Out of resource error.
@@ -1310,10 +1359,10 @@ GetNextStringId (
 **/
 UINT32
 GetStringIdFromRecord (
-  IN HII_DATABASE_RECORD   *DatabaseRecord,
-  IN CHAR8                 **NameSpace,
-  IN CHAR16                *KeywordValue,
-  OUT EFI_STRING_ID        *StringId
+  IN HII_DATABASE_RECORD  *DatabaseRecord,
+  IN CHAR8                **NameSpace,
+  IN CHAR16               *KeywordValue,
+  OUT EFI_STRING_ID       *StringId
   )
 {
   LIST_ENTRY                          *Link;
@@ -1326,7 +1375,7 @@ GetStringIdFromRecord (
   ASSERT (DatabaseRecord != NULL && NameSpace != NULL && KeywordValue != NULL);
 
   PackageListNode = DatabaseRecord->PackageList;
-  RetVal = KEYWORD_HANDLER_NAMESPACE_ID_NOT_FOUND;
+  RetVal          = KEYWORD_HANDLER_NAMESPACE_ID_NOT_FOUND;
 
   if (*NameSpace != NULL) {
     Name = *NameSpace;
@@ -1337,11 +1386,10 @@ GetStringIdFromRecord (
   for (Link = PackageListNode->StringPkgHdr.ForwardLink; Link != &PackageListNode->StringPkgHdr; Link = Link->ForwardLink) {
     StringPackage = CR (Link, HII_STRING_PACKAGE_INSTANCE, StringEntry, HII_STRING_PACKAGE_SIGNATURE);
 
-    if (AsciiStrnCmp(Name, StringPackage->StringPkgHdr->Language, AsciiStrLen (Name)) == 0) {
-      Status = GetStringIdFromString (StringPackage, KeywordValue, StringId); 
+    if (AsciiStrnCmp (Name, StringPackage->StringPkgHdr->Language, AsciiStrLen (Name)) == 0) {
+      Status = GetStringIdFromString (StringPackage, KeywordValue, StringId);
       if (EFI_ERROR (Status)) {
-        RetVal = KEYWORD_HANDLER_KEYWORD_NOT_FOUND;
-        continue;
+        return KEYWORD_HANDLER_KEYWORD_NOT_FOUND;
       } else {
         if (*NameSpace == NULL) {
           *NameSpace = AllocateCopyPool (AsciiStrSize (StringPackage->StringPkgHdr->Language), StringPackage->StringPkgHdr->Language);
@@ -1349,6 +1397,7 @@ GetStringIdFromRecord (
             return KEYWORD_HANDLER_UNDEFINED_PROCESSING_ERROR;
           }
         }
+
         return KEYWORD_HANDLER_NO_ERROR;
       }
     }
@@ -1368,7 +1417,7 @@ GetStringIdFromRecord (
 **/
 BOOLEAN
 IsStatementOpCode (
-  IN UINT8              Operand
+  IN UINT8  Operand
   )
 {
   if ((Operand == EFI_IFR_SUBTITLE_OP) ||
@@ -1384,7 +1433,8 @@ IsStatementOpCode (
       (Operand == EFI_IFR_DATE_OP) ||
       (Operand == EFI_IFR_TIME_OP) ||
       (Operand == EFI_IFR_GUID_OP) ||
-      (Operand == EFI_IFR_ONE_OF_OP)) {
+      (Operand == EFI_IFR_ONE_OF_OP))
+  {
     return TRUE;
   }
 
@@ -1402,12 +1452,13 @@ IsStatementOpCode (
 **/
 BOOLEAN
 IsStorageOpCode (
-  IN UINT8              Operand
+  IN UINT8  Operand
   )
 {
   if ((Operand == EFI_IFR_VARSTORE_OP) ||
       (Operand == EFI_IFR_VARSTORE_NAME_VALUE_OP) ||
-      (Operand == EFI_IFR_VARSTORE_EFI_OP)) {
+      (Operand == EFI_IFR_VARSTORE_EFI_OP))
+  {
     return TRUE;
   }
 
@@ -1423,28 +1474,28 @@ IsStorageOpCode (
   @retval  the opcode for the question.
 
 **/
-UINT8 * 
+UINT8 *
 FindQuestionFromStringId (
-  IN HII_IFR_PACKAGE_INSTANCE      *FormPackage,
-  IN EFI_STRING_ID                 KeywordStrId 
+  IN HII_IFR_PACKAGE_INSTANCE  *FormPackage,
+  IN EFI_STRING_ID             KeywordStrId
   )
 {
-  UINT8                        *OpCodeData;
-  UINT32                       Offset;
-  EFI_IFR_STATEMENT_HEADER     *StatementHeader;
-  EFI_IFR_OP_HEADER            *OpCodeHeader;
-  UINT32                       FormDataLen;
+  UINT8                     *OpCodeData;
+  UINT32                    Offset;
+  EFI_IFR_STATEMENT_HEADER  *StatementHeader;
+  EFI_IFR_OP_HEADER         *OpCodeHeader;
+  UINT32                    FormDataLen;
 
   ASSERT (FormPackage != NULL);
 
   FormDataLen = FormPackage->FormPkgHdr.Length - sizeof (EFI_HII_PACKAGE_HEADER);
-  Offset = 0;
+  Offset      = 0;
   while (Offset < FormDataLen) {
-    OpCodeData = FormPackage->IfrData + Offset;
-    OpCodeHeader = (EFI_IFR_OP_HEADER *) OpCodeData;
+    OpCodeData   = FormPackage->IfrData + Offset;
+    OpCodeHeader = (EFI_IFR_OP_HEADER *)OpCodeData;
 
-    if (IsStatementOpCode(OpCodeHeader->OpCode)) {
-      StatementHeader = (EFI_IFR_STATEMENT_HEADER *) (OpCodeData + sizeof (EFI_IFR_OP_HEADER));
+    if (IsStatementOpCode (OpCodeHeader->OpCode)) {
+      StatementHeader = (EFI_IFR_STATEMENT_HEADER *)(OpCodeData + sizeof (EFI_IFR_OP_HEADER));
       if (StatementHeader->Prompt == KeywordStrId) {
         return OpCodeData;
       }
@@ -1467,45 +1518,48 @@ FindQuestionFromStringId (
 **/
 UINT8 *
 FindStorageFromVarId (
-  IN HII_IFR_PACKAGE_INSTANCE      *FormPackage,
-  IN EFI_VARSTORE_ID               VarStoreId
+  IN HII_IFR_PACKAGE_INSTANCE  *FormPackage,
+  IN EFI_VARSTORE_ID           VarStoreId
   )
 {
-  UINT8                        *OpCodeData;
-  UINT32                       Offset;
-  EFI_IFR_OP_HEADER            *OpCodeHeader;
-  UINT32                       FormDataLen;
+  UINT8              *OpCodeData;
+  UINT32             Offset;
+  EFI_IFR_OP_HEADER  *OpCodeHeader;
+  UINT32             FormDataLen;
 
   ASSERT (FormPackage != NULL);
 
   FormDataLen = FormPackage->FormPkgHdr.Length - sizeof (EFI_HII_PACKAGE_HEADER);
-  Offset = 0;
+  Offset      = 0;
   while (Offset < FormDataLen) {
-    OpCodeData = FormPackage->IfrData + Offset;
-    OpCodeHeader = (EFI_IFR_OP_HEADER *) OpCodeData;
+    OpCodeData   = FormPackage->IfrData + Offset;
+    OpCodeHeader = (EFI_IFR_OP_HEADER *)OpCodeData;
 
-    if (IsStorageOpCode(OpCodeHeader->OpCode)) {
+    if (IsStorageOpCode (OpCodeHeader->OpCode)) {
       switch (OpCodeHeader->OpCode) {
-      case EFI_IFR_VARSTORE_OP:
-        if (VarStoreId == ((EFI_IFR_VARSTORE *) OpCodeData)->VarStoreId) {
-          return OpCodeData;
-        }
-        break;
+        case EFI_IFR_VARSTORE_OP:
+          if (VarStoreId == ((EFI_IFR_VARSTORE *)OpCodeData)->VarStoreId) {
+            return OpCodeData;
+          }
 
-      case EFI_IFR_VARSTORE_NAME_VALUE_OP:
-        if (VarStoreId == ((EFI_IFR_VARSTORE_NAME_VALUE *) OpCodeData)->VarStoreId) {
-          return OpCodeData;
-        }
-        break;
+          break;
 
-      case EFI_IFR_VARSTORE_EFI_OP:
-        if (VarStoreId == ((EFI_IFR_VARSTORE_EFI *) OpCodeData)->VarStoreId) {
-          return OpCodeData;
-        }
-        break;
+        case EFI_IFR_VARSTORE_NAME_VALUE_OP:
+          if (VarStoreId == ((EFI_IFR_VARSTORE_NAME_VALUE *)OpCodeData)->VarStoreId) {
+            return OpCodeData;
+          }
 
-      default:
-        break;
+          break;
+
+        case EFI_IFR_VARSTORE_EFI_OP:
+          if (VarStoreId == ((EFI_IFR_VARSTORE_EFI *)OpCodeData)->VarStoreId) {
+            return OpCodeData;
+          }
+
+          break;
+
+        default:
+          break;
       }
     }
 
@@ -1523,84 +1577,86 @@ FindStorageFromVarId (
   @retval  the width info for one question.
 
 **/
-UINT16 
+UINT16
 GetWidth (
-  IN UINT8        *OpCodeData
+  IN UINT8  *OpCodeData
   )
 {
-  UINT8      *NextOpCodeData;
+  UINT8  *NextOpCodeData;
 
   ASSERT (OpCodeData != NULL);
 
-  switch (((EFI_IFR_OP_HEADER *) OpCodeData)->OpCode) {
-  case EFI_IFR_REF_OP:
-    return (UINT16) sizeof (EFI_HII_REF);
+  switch (((EFI_IFR_OP_HEADER *)OpCodeData)->OpCode) {
+    case EFI_IFR_REF_OP:
+      return (UINT16)sizeof (EFI_HII_REF);
 
-  case EFI_IFR_ONE_OF_OP:
-  case EFI_IFR_NUMERIC_OP:
-    switch (((EFI_IFR_ONE_OF *) OpCodeData)->Flags & EFI_IFR_NUMERIC_SIZE) {
-    case EFI_IFR_NUMERIC_SIZE_1:
-      return (UINT16) sizeof (UINT8);
-    
-    case EFI_IFR_NUMERIC_SIZE_2:
-      return  (UINT16) sizeof (UINT16);
-    
-    case EFI_IFR_NUMERIC_SIZE_4:
-      return (UINT16) sizeof (UINT32);
-    
-    case EFI_IFR_NUMERIC_SIZE_8:
-      return (UINT16) sizeof (UINT64);
-    
+    case EFI_IFR_ONE_OF_OP:
+    case EFI_IFR_NUMERIC_OP:
+      switch (((EFI_IFR_ONE_OF *)OpCodeData)->Flags & EFI_IFR_NUMERIC_SIZE) {
+        case EFI_IFR_NUMERIC_SIZE_1:
+          return (UINT16)sizeof (UINT8);
+
+        case EFI_IFR_NUMERIC_SIZE_2:
+          return (UINT16)sizeof (UINT16);
+
+        case EFI_IFR_NUMERIC_SIZE_4:
+          return (UINT16)sizeof (UINT32);
+
+        case EFI_IFR_NUMERIC_SIZE_8:
+          return (UINT16)sizeof (UINT64);
+
+        default:
+          ASSERT (FALSE);
+          return 0;
+      }
+
+    case EFI_IFR_ORDERED_LIST_OP:
+      NextOpCodeData = OpCodeData + ((EFI_IFR_ORDERED_LIST *)OpCodeData)->Header.Length;
+      //
+      // OneOfOption must follow the orderedlist opcode.
+      //
+      ASSERT (((EFI_IFR_OP_HEADER *)NextOpCodeData)->OpCode == EFI_IFR_ONE_OF_OPTION_OP);
+      switch (((EFI_IFR_ONE_OF_OPTION *)NextOpCodeData)->Type) {
+        case EFI_IFR_TYPE_NUM_SIZE_8:
+          return (UINT16)sizeof (UINT8) * ((EFI_IFR_ORDERED_LIST *)OpCodeData)->MaxContainers;
+
+        case EFI_IFR_TYPE_NUM_SIZE_16:
+          return (UINT16)sizeof (UINT16) * ((EFI_IFR_ORDERED_LIST *)OpCodeData)->MaxContainers;
+
+        case EFI_IFR_TYPE_NUM_SIZE_32:
+          return (UINT16)sizeof (UINT32) * ((EFI_IFR_ORDERED_LIST *)OpCodeData)->MaxContainers;
+
+        case EFI_IFR_TYPE_NUM_SIZE_64:
+          return (UINT16)sizeof (UINT64) * ((EFI_IFR_ORDERED_LIST *)OpCodeData)->MaxContainers;
+
+        default:
+          ASSERT (FALSE);
+          return 0;
+      }
+
+    case EFI_IFR_CHECKBOX_OP:
+      return (UINT16)sizeof (BOOLEAN);
+
+    case EFI_IFR_PASSWORD_OP:
+      return (UINT16)((UINTN)((EFI_IFR_PASSWORD *)OpCodeData)->MaxSize * sizeof (CHAR16));
+
+    case EFI_IFR_STRING_OP:
+      return (UINT16)((UINTN)((EFI_IFR_STRING *)OpCodeData)->MaxSize * sizeof (CHAR16));
+
+    case EFI_IFR_DATE_OP:
+      return (UINT16)sizeof (EFI_HII_DATE);
+
+    case EFI_IFR_TIME_OP:
+      return (UINT16)sizeof (EFI_HII_TIME);
+
     default:
       ASSERT (FALSE);
       return 0;
-    }
-
-  case EFI_IFR_ORDERED_LIST_OP:
-    NextOpCodeData = OpCodeData + ((EFI_IFR_ORDERED_LIST *) OpCodeData)->Header.Length;
-    //
-    // OneOfOption must follow the orderedlist opcode.
-    //
-    ASSERT (((EFI_IFR_OP_HEADER *) NextOpCodeData)->OpCode == EFI_IFR_ONE_OF_OPTION_OP);
-    switch (((EFI_IFR_ONE_OF_OPTION *) NextOpCodeData)->Type) {
-    case EFI_IFR_TYPE_NUM_SIZE_8:
-      return (UINT16) sizeof (UINT8) * ((EFI_IFR_ORDERED_LIST *) OpCodeData)->MaxContainers;
-    
-    case EFI_IFR_TYPE_NUM_SIZE_16:
-      return (UINT16) sizeof (UINT16) * ((EFI_IFR_ORDERED_LIST *) OpCodeData)->MaxContainers ;
-    
-    case EFI_IFR_TYPE_NUM_SIZE_32:
-      return (UINT16) sizeof (UINT32) * ((EFI_IFR_ORDERED_LIST *) OpCodeData)->MaxContainers;
-    
-    case EFI_IFR_TYPE_NUM_SIZE_64:
-      return (UINT16) sizeof (UINT64) * ((EFI_IFR_ORDERED_LIST *) OpCodeData)->MaxContainers;
-    
-    default:
-      ASSERT (FALSE);
-      return 0;
-    }
-
-  case EFI_IFR_CHECKBOX_OP:
-    return (UINT16) sizeof (BOOLEAN);
-    
-  case EFI_IFR_PASSWORD_OP:
-  case EFI_IFR_STRING_OP:
-    return (UINT16)((UINTN) ((EFI_IFR_STRING *) OpCodeData)->MaxSize * sizeof (CHAR16));
-
-  case EFI_IFR_DATE_OP:
-    return (UINT16) sizeof (EFI_HII_DATE);
-
-  case EFI_IFR_TIME_OP:
-    return (UINT16) sizeof (EFI_HII_TIME);
-
-  default:
-    ASSERT (FALSE);
-    return 0;
   }
 }
 
 /**
-  Converts all hex dtring characters in range ['A'..'F'] to ['a'..'f'] for 
+  Converts all hex string characters in range ['A'..'F'] to ['a'..'f'] for
   hex digits that appear between a '=' and a '&' in a config string.
 
   If ConfigString is NULL, then ASSERT().
@@ -1629,8 +1685,8 @@ InternalLowerConfigString (
       Lower = TRUE;
     } else if (*String == L'&') {
       Lower = FALSE;
-    } else if (Lower && *String >= L'A' && *String <= L'F') {
-      *String = (CHAR16) (*String - L'A' + L'a');
+    } else if (Lower && (*String >= L'A') && (*String <= L'F')) {
+      *String = (CHAR16)(*String - L'A' + L'a');
     }
   }
 
@@ -1639,16 +1695,16 @@ InternalLowerConfigString (
 
 /**
   Allocates and returns a Null-terminated Unicode <ConfigHdr> string.
-  
+
   The format of a <ConfigHdr> is as follows:
 
     GUID=<HexCh>32&NAME=<Char>NameLength&PATH=<HexChar>DevicePathSize<Null>
 
-  @param[in]  OpCodeData    The opcode for the storage.                  
+  @param[in]  OpCodeData    The opcode for the storage.
   @param[in]  DriverHandle  The driver handle which supports a Device Path Protocol
                             that is the routing information PATH.  Each byte of
                             the Device Path associated with DriverHandle is converted
-                            to a 2 Unicode character hexidecimal string.
+                            to a 2 Unicode character hexadecimal string.
 
   @retval NULL   DriverHandle does not support the Device Path Protocol.
   @retval Other  A pointer to the Null-terminate Unicode <ConfigHdr> string
@@ -1656,8 +1712,8 @@ InternalLowerConfigString (
 **/
 EFI_STRING
 ConstructConfigHdr (
-  IN UINT8           *OpCodeData,
-  IN EFI_HANDLE      DriverHandle
+  IN UINT8       *OpCodeData,
+  IN EFI_HANDLE  DriverHandle
   )
 {
   UINTN                     NameLength;
@@ -1669,44 +1725,46 @@ ConstructConfigHdr (
   UINT8                     *Buffer;
   CHAR16                    *Name;
   CHAR8                     *AsciiName;
+  UINTN                     NameSize;
   EFI_GUID                  *Guid;
   UINTN                     MaxLen;
 
   ASSERT (OpCodeData != NULL);
 
   switch (((EFI_IFR_OP_HEADER *)OpCodeData)->OpCode) {
-  case EFI_IFR_VARSTORE_OP:
-    Guid      = (EFI_GUID *)(UINTN *)&((EFI_IFR_VARSTORE *) OpCodeData)->Guid;
-    AsciiName = (CHAR8 *) ((EFI_IFR_VARSTORE *) OpCodeData)->Name;
-    break;
-  
-  case EFI_IFR_VARSTORE_NAME_VALUE_OP:
-    Guid      = (EFI_GUID *)(UINTN *)&((EFI_IFR_VARSTORE_NAME_VALUE *) OpCodeData)->Guid;
-    AsciiName = NULL;
-    break;
-  
-  case EFI_IFR_VARSTORE_EFI_OP:
-    Guid      = (EFI_GUID *)(UINTN *)&((EFI_IFR_VARSTORE_EFI *) OpCodeData)->Guid;
-    AsciiName = (CHAR8 *) ((EFI_IFR_VARSTORE_EFI *) OpCodeData)->Name;
-    break;
-  
-  default:
-    ASSERT (FALSE);
-    Guid      = NULL;
-    AsciiName = NULL;
-    break;
+    case EFI_IFR_VARSTORE_OP:
+      Guid      = (EFI_GUID *)(UINTN *)&((EFI_IFR_VARSTORE *)OpCodeData)->Guid;
+      AsciiName = (CHAR8 *)((EFI_IFR_VARSTORE *)OpCodeData)->Name;
+      break;
+
+    case EFI_IFR_VARSTORE_NAME_VALUE_OP:
+      Guid      = (EFI_GUID *)(UINTN *)&((EFI_IFR_VARSTORE_NAME_VALUE *)OpCodeData)->Guid;
+      AsciiName = NULL;
+      break;
+
+    case EFI_IFR_VARSTORE_EFI_OP:
+      Guid      = (EFI_GUID *)(UINTN *)&((EFI_IFR_VARSTORE_EFI *)OpCodeData)->Guid;
+      AsciiName = (CHAR8 *)((EFI_IFR_VARSTORE_EFI *)OpCodeData)->Name;
+      break;
+
+    default:
+      ASSERT (FALSE);
+      Guid      = NULL;
+      AsciiName = NULL;
+      break;
   }
 
   if (AsciiName != NULL) {
-    Name = AllocateZeroPool (AsciiStrSize (AsciiName) * 2);
+    NameSize = AsciiStrSize (AsciiName);
+    Name     = AllocateZeroPool (NameSize * sizeof (CHAR16));
     ASSERT (Name != NULL);
-    AsciiStrToUnicodeStr(AsciiName, Name);
+    AsciiStrToUnicodeStrS (AsciiName, Name, NameSize);
   } else {
     Name = NULL;
   }
 
   //
-  // Compute the length of Name in Unicode characters.  
+  // Compute the length of Name in Unicode characters.
   // If Name is NULL, then the length is 0.
   //
   NameLength = 0;
@@ -1714,7 +1772,7 @@ ConstructConfigHdr (
     NameLength = StrLen (Name);
   }
 
-  DevicePath = NULL;
+  DevicePath     = NULL;
   DevicePathSize = 0;
   //
   // Retrieve DevicePath Protocol associated with DriverHandle
@@ -1724,6 +1782,7 @@ ConstructConfigHdr (
     if (DevicePath == NULL) {
       return NULL;
     }
+
     //
     // Compute the size of the device path in bytes
     //
@@ -1745,43 +1804,64 @@ ConstructConfigHdr (
   //
   StrCpyS (String, MaxLen, L"GUID=");
   ReturnString = String;
-  String += StrLen (String);
+  String      += StrLen (String);
 
   if (Guid != NULL) {
     //
     // Append Guid converted to <HexCh>32
     //
     for (Index = 0, Buffer = (UINT8 *)Guid; Index < sizeof (EFI_GUID); Index++) {
-      String += UnicodeValueToString (String, PREFIX_ZERO | RADIX_HEX, *(Buffer++), 2);
+      UnicodeValueToStringS (
+        String,
+        MaxLen * sizeof (CHAR16) - ((UINTN)String - (UINTN)ReturnString),
+        PREFIX_ZERO | RADIX_HEX,
+        *(Buffer++),
+        2
+        );
+      String += StrnLenS (String, MaxLen - ((UINTN)String - (UINTN)ReturnString) / sizeof (CHAR16));
     }
   }
-  
+
   //
   // Append L"&NAME="
   //
-  StrCpyS (String, MaxLen, L"&NAME=");
+  StrCatS (ReturnString, MaxLen, L"&NAME=");
   String += StrLen (String);
 
   if (Name != NULL) {
     //
     // Append Name converted to <Char>NameLength
     //
-    for (; *Name != L'\0'; Name++) {
-      String += UnicodeValueToString (String, PREFIX_ZERO | RADIX_HEX, *Name, 4);
+    for ( ; *Name != L'\0'; Name++) {
+      UnicodeValueToStringS (
+        String,
+        MaxLen * sizeof (CHAR16) - ((UINTN)String - (UINTN)ReturnString),
+        PREFIX_ZERO | RADIX_HEX,
+        *Name,
+        4
+        );
+      String += StrnLenS (String, MaxLen - ((UINTN)String - (UINTN)ReturnString) / sizeof (CHAR16));
     }
   }
 
   //
   // Append L"&PATH="
   //
-  StrCpyS (String, MaxLen, L"&PATH=");
+  StrCatS (ReturnString, MaxLen, L"&PATH=");
   String += StrLen (String);
 
   //
   // Append the device path associated with DriverHandle converted to <HexChar>DevicePathSize
   //
   for (Index = 0, Buffer = (UINT8 *)DevicePath; Index < DevicePathSize; Index++) {
-    String += UnicodeValueToString (String, PREFIX_ZERO | RADIX_HEX, *(Buffer++), 2);
+    UnicodeValueToStringS (
+      String,
+      MaxLen * sizeof (CHAR16) - ((UINTN)String - (UINTN)ReturnString),
+      PREFIX_ZERO | RADIX_HEX,
+      *(Buffer++),
+      2
+      );
+    String += StrnLenS (String, MaxLen - ((UINTN)String - (UINTN)ReturnString) / sizeof (CHAR16));
   }
 
   //
@@ -1807,14 +1887,14 @@ ConstructConfigHdr (
 **/
 EFI_STRING
 ConstructRequestElement (
-  IN CHAR16      *Name,
-  IN UINT16      Offset,
-  IN UINT16      Width  
+  IN CHAR16  *Name,
+  IN UINT16  Offset,
+  IN UINT16  Width
   )
 {
-  CHAR16    *StringPtr;
-  UINTN     Length;
-  
+  CHAR16  *StringPtr;
+  UINTN   Length;
+
   if (Name != NULL) {
     //
     // Add <BlockName> length for each Name
@@ -1848,18 +1928,18 @@ ConstructRequestElement (
       (StrLen (Name) + 1) * sizeof (CHAR16),
       L"%s",
       Name
-    );
+      );
   } else {
     //
     // Append OFFSET=XXXX&WIDTH=YYYY\0
     //
     UnicodeSPrint (
-      StringPtr, 
-      (7 + 4 + 7 + 4 + 1) * sizeof (CHAR16), 
-      L"OFFSET=%04X&WIDTH=%04X", 
-      Offset, 
+      StringPtr,
+      (7 + 4 + 7 + 4 + 1) * sizeof (CHAR16),
+      L"OFFSET=%04X&WIDTH=%04X",
+      Offset,
       Width
-    );
+      );
   }
 
   return StringPtr;
@@ -1876,8 +1956,8 @@ ConstructRequestElement (
 **/
 CHAR16 *
 GetNameFromId (
-  IN HII_DATABASE_RECORD   *DatabaseRecord,
-  IN EFI_STRING_ID         NameId
+  IN HII_DATABASE_RECORD  *DatabaseRecord,
+  IN EFI_STRING_ID        NameId
   )
 {
   CHAR16      *Name;
@@ -1888,39 +1968,39 @@ GetNameFromId (
   CHAR16      TempString;
   EFI_STATUS  Status;
 
-  Name = NULL;
-  BestLanguage = NULL;
-  PlatformLanguage = NULL; 
+  Name               = NULL;
+  BestLanguage       = NULL;
+  PlatformLanguage   = NULL;
   SupportedLanguages = NULL;
 
-  GetEfiGlobalVariable2 (L"PlatformLang", (VOID**)&PlatformLanguage, NULL);
-  SupportedLanguages = GetSupportedLanguages(DatabaseRecord->Handle);
+  GetEfiGlobalVariable2 (L"PlatformLang", (VOID **)&PlatformLanguage, NULL);
+  SupportedLanguages = GetSupportedLanguages (DatabaseRecord->Handle);
 
   //
   // Get the best matching language from SupportedLanguages
   //
   BestLanguage = GetBestLanguage (
-                   SupportedLanguages, 
+                   SupportedLanguages,
                    FALSE,                                             // RFC 4646 mode
                    PlatformLanguage != NULL ? PlatformLanguage : "",  // Highest priority
-                   SupportedLanguages,                                // Lowest priority 
+                   SupportedLanguages,                                // Lowest priority
                    NULL
                    );
   if (BestLanguage == NULL) {
-    BestLanguage = AllocateCopyPool (AsciiStrLen ("en-US"), "en-US");
+    BestLanguage = AllocateCopyPool (sizeof ("en-US"), "en-US");
     ASSERT (BestLanguage != NULL);
   }
 
   StringSize = 0;
-  Status = mPrivate.HiiString.GetString (
-                                 &mPrivate.HiiString,
-                                 BestLanguage,
-                                 DatabaseRecord->Handle,
-                                 NameId,
-                                 &TempString,
-                                 &StringSize,
-                                 NULL
-                                 );
+  Status     = mPrivate.HiiString.GetString (
+                                    &mPrivate.HiiString,
+                                    BestLanguage,
+                                    DatabaseRecord->Handle,
+                                    NameId,
+                                    &TempString,
+                                    &StringSize,
+                                    NULL
+                                    );
   if (Status != EFI_BUFFER_TOO_SMALL) {
     goto Done;
   }
@@ -1931,14 +2011,14 @@ GetNameFromId (
   }
 
   Status = mPrivate.HiiString.GetString (
-                          &mPrivate.HiiString,
-                          BestLanguage,
-                          DatabaseRecord->Handle,
-                          NameId,
-                          Name,
-                          &StringSize,
-                          NULL
-                          );
+                                &mPrivate.HiiString,
+                                BestLanguage,
+                                DatabaseRecord->Handle,
+                                NameId,
+                                Name,
+                                &StringSize,
+                                NULL
+                                );
 
   if (EFI_ERROR (Status)) {
     FreePool (Name);
@@ -1948,11 +2028,13 @@ GetNameFromId (
 
 Done:
   if (SupportedLanguages != NULL) {
-    FreePool(SupportedLanguages);
+    FreePool (SupportedLanguages);
   }
+
   if (BestLanguage != NULL) {
     FreePool (BestLanguage);
   }
+
   if (PlatformLanguage != NULL) {
     FreePool (PlatformLanguage);
   }
@@ -1977,11 +2059,11 @@ Done:
 **/
 EFI_STATUS
 ExtractConfigRequest (
-  IN  HII_DATABASE_RECORD   *DatabaseRecord,
-  IN  EFI_STRING_ID         KeywordStrId,
-  OUT UINT8                 **OpCodeData,
-  OUT EFI_STRING            *ConfigRequest
-  ) 
+  IN  HII_DATABASE_RECORD  *DatabaseRecord,
+  IN  EFI_STRING_ID        KeywordStrId,
+  OUT UINT8                **OpCodeData,
+  OUT EFI_STRING           *ConfigRequest
+  )
 {
   LIST_ENTRY                          *Link;
   HII_DATABASE_PACKAGE_LIST_INSTANCE  *PackageListNode;
@@ -2015,44 +2097,43 @@ ExtractConfigRequest (
     OpCode = FindQuestionFromStringId (FormPackage, KeywordStrId);
     if (OpCode != NULL) {
       *OpCodeData = OpCode;
-      Header = (EFI_IFR_QUESTION_HEADER *) (OpCode + sizeof (EFI_IFR_OP_HEADER));
+      Header      = (EFI_IFR_QUESTION_HEADER *)(OpCode + sizeof (EFI_IFR_OP_HEADER));
       //
       // Header->VarStoreId == 0 means no storage for this question.
       //
-      ASSERT (Header->VarStoreId != 0);
-      DEBUG ((EFI_D_INFO, "Varstore Id: 0x%x\n", Header->VarStoreId));
-      
+      if (Header->VarStoreId == 0) {
+        continue;
+      }
+
       Storage = FindStorageFromVarId (FormPackage, Header->VarStoreId);
       ASSERT (Storage != NULL);
 
-      if (((EFI_IFR_OP_HEADER *) Storage)->OpCode == EFI_IFR_VARSTORE_NAME_VALUE_OP) {
+      if (((EFI_IFR_OP_HEADER *)Storage)->OpCode == EFI_IFR_VARSTORE_NAME_VALUE_OP) {
         Name = GetNameFromId (DatabaseRecord, Header->VarStoreInfo.VarName);
       } else {
         Offset = Header->VarStoreInfo.VarOffset;
-        Width = GetWidth (OpCode);
+        Width  = GetWidth (OpCode);
       }
-      RequestElement = ConstructRequestElement(Name, Offset, Width);
-      ConfigHdr = ConstructConfigHdr(Storage, DatabaseRecord->DriverHandle);
+
+      RequestElement = ConstructRequestElement (Name, Offset, Width);
+      ConfigHdr      = ConstructConfigHdr (Storage, DatabaseRecord->DriverHandle);
       ASSERT (ConfigHdr != NULL);
 
-      MaxLen = StrLen (ConfigHdr) + 1 + StrLen(RequestElement) + 1;
+      MaxLen         = StrLen (ConfigHdr) + 1 + StrLen (RequestElement) + 1;
       *ConfigRequest = AllocatePool (MaxLen * sizeof (CHAR16));
       if (*ConfigRequest == NULL) {
         FreePool (ConfigHdr);
         FreePool (RequestElement);
         return EFI_OUT_OF_RESOURCES;
       }
+
       StringPtr = *ConfigRequest;
 
       StrCpyS (StringPtr, MaxLen, ConfigHdr);
-      StringPtr += StrLen (StringPtr);
 
-      *StringPtr = L'&';
-      StringPtr++;
+      StrCatS (StringPtr, MaxLen, L"&");
 
-      StrCpyS (StringPtr, MaxLen, RequestElement);
-      StringPtr += StrLen (StringPtr);
-      *StringPtr = L'\0';
+      StrCatS (StringPtr, MaxLen, RequestElement);
 
       FreePool (ConfigHdr);
       FreePool (RequestElement);
@@ -2083,12 +2164,12 @@ ExtractConfigRequest (
 **/
 EFI_STATUS
 ExtractConfigResp (
-  IN  HII_DATABASE_RECORD   *DatabaseRecord,
-  IN  EFI_STRING_ID         KeywordStrId,
-  IN  EFI_STRING            ValueElement,
-  OUT UINT8                 **OpCodeData,
-  OUT EFI_STRING            *ConfigResp
-  ) 
+  IN  HII_DATABASE_RECORD  *DatabaseRecord,
+  IN  EFI_STRING_ID        KeywordStrId,
+  IN  EFI_STRING           ValueElement,
+  OUT UINT8                **OpCodeData,
+  OUT EFI_STRING           *ConfigResp
+  )
 {
   LIST_ENTRY                          *Link;
   HII_DATABASE_PACKAGE_LIST_INSTANCE  *PackageListNode;
@@ -2122,54 +2203,49 @@ ExtractConfigResp (
     OpCode = FindQuestionFromStringId (FormPackage, KeywordStrId);
     if (OpCode != NULL) {
       *OpCodeData = OpCode;
-      Header = (EFI_IFR_QUESTION_HEADER *) (OpCode + sizeof (EFI_IFR_OP_HEADER));
+      Header      = (EFI_IFR_QUESTION_HEADER *)(OpCode + sizeof (EFI_IFR_OP_HEADER));
       //
       // Header->VarStoreId == 0 means no storage for this question.
       //
       ASSERT (Header->VarStoreId != 0);
-      DEBUG ((EFI_D_INFO, "Varstore Id: 0x%x\n", Header->VarStoreId));
-      
+      DEBUG ((DEBUG_INFO, "Varstore Id: 0x%x\n", Header->VarStoreId));
+
       Storage = FindStorageFromVarId (FormPackage, Header->VarStoreId);
       ASSERT (Storage != NULL);
 
-      if (((EFI_IFR_OP_HEADER *) Storage)->OpCode == EFI_IFR_VARSTORE_NAME_VALUE_OP) {
+      if (((EFI_IFR_OP_HEADER *)Storage)->OpCode == EFI_IFR_VARSTORE_NAME_VALUE_OP) {
         Name = GetNameFromId (DatabaseRecord, Header->VarStoreInfo.VarName);
       } else {
         Offset = Header->VarStoreInfo.VarOffset;
         Width  = GetWidth (OpCode);
       }
-      RequestElement = ConstructRequestElement(Name, Offset, Width);
 
-      ConfigHdr = ConstructConfigHdr(Storage, DatabaseRecord->DriverHandle);
+      RequestElement = ConstructRequestElement (Name, Offset, Width);
+
+      ConfigHdr = ConstructConfigHdr (Storage, DatabaseRecord->DriverHandle);
       ASSERT (ConfigHdr != NULL);
 
-      MaxLen = StrLen (ConfigHdr) + 1 + StrLen(RequestElement) + 1 + StrLen (L"VALUE=") + StrLen(ValueElement) + 1;
+      MaxLen      = StrLen (ConfigHdr) + 1 + StrLen (RequestElement) + 1 + StrLen (L"VALUE=") + StrLen (ValueElement) + 1;
       *ConfigResp = AllocatePool (MaxLen * sizeof (CHAR16));
       if (*ConfigResp == NULL) {
         FreePool (ConfigHdr);
         FreePool (RequestElement);
         return EFI_OUT_OF_RESOURCES;
       }
+
       StringPtr = *ConfigResp;
 
       StrCpyS (StringPtr, MaxLen, ConfigHdr);
-      StringPtr += StrLen (StringPtr);
 
-      *StringPtr = L'&';
-      StringPtr++;
+      StrCatS (StringPtr, MaxLen, L"&");
 
-      StrCpyS (StringPtr, MaxLen, RequestElement);
-      StringPtr += StrLen (StringPtr);
-      
-      *StringPtr = L'&';
-      StringPtr++;
+      StrCatS (StringPtr, MaxLen, RequestElement);
 
-      StrCpyS (StringPtr, MaxLen, L"VALUE=");
-      StringPtr += StrLen (StringPtr);
+      StrCatS (StringPtr, MaxLen, L"&");
 
-      StrCpyS (StringPtr, MaxLen, ValueElement);
-      StringPtr += StrLen (StringPtr);
-      *StringPtr = L'\0';
+      StrCatS (StringPtr, MaxLen, L"VALUE=");
+
+      StrCatS (StringPtr, MaxLen, ValueElement);
 
       FreePool (ConfigHdr);
       FreePool (RequestElement);
@@ -2196,24 +2272,24 @@ ExtractConfigResp (
 **/
 EFI_STATUS
 ExtractValueFromDriver (
-  IN  CHAR16           *ConfigRequest,
-  OUT CHAR16           **ValueElement
+  IN  CHAR16  *ConfigRequest,
+  OUT CHAR16  **ValueElement
   )
 {
-  EFI_STATUS   Status;
-  EFI_STRING   Result;
-  EFI_STRING   Progress;
-  CHAR16       *StringPtr;
-  CHAR16       *StringEnd;
+  EFI_STATUS  Status;
+  EFI_STRING  Result;
+  EFI_STRING  Progress;
+  CHAR16      *StringPtr;
+  CHAR16      *StringEnd;
 
   ASSERT ((ConfigRequest != NULL) && (ValueElement != NULL));
 
   Status = mPrivate.ConfigRouting.ExtractConfig (
-                      &mPrivate.ConfigRouting,
-                      (EFI_STRING) ConfigRequest,
-                      &Progress,
-                      &Result
-                      );
+                                    &mPrivate.ConfigRouting,
+                                    (EFI_STRING)ConfigRequest,
+                                    &Progress,
+                                    &Result
+                                    );
   if (EFI_ERROR (Status)) {
     return Status;
   }
@@ -2236,6 +2312,7 @@ ExtractValueFromDriver (
   if (StringEnd != NULL) {
     *StringEnd = L'&';
   }
+
   FreePool (Result);
 
   return EFI_SUCCESS;
@@ -2260,20 +2337,20 @@ ExtractValueFromDriver (
 **/
 EFI_STATUS
 GetStringIdFromDatabase (
-  IN  EFI_DEVICE_PATH_PROTOCOL            **DevicePath,
-  IN  CHAR8                               **NameSpace,
-  IN  CHAR16                              *KeywordData,
-  OUT UINT32                              *ProgressErr,
-  OUT EFI_STRING_ID                       *KeywordStringId,
-  OUT HII_DATABASE_RECORD                 **DataBaseRecord
- )
+  IN  EFI_DEVICE_PATH_PROTOCOL  **DevicePath,
+  IN  CHAR8                     **NameSpace,
+  IN  CHAR16                    *KeywordData,
+  OUT UINT32                    *ProgressErr,
+  OUT EFI_STRING_ID             *KeywordStringId,
+  OUT HII_DATABASE_RECORD       **DataBaseRecord
+  )
 {
-  HII_DATABASE_RECORD                 *Record;
-  LIST_ENTRY                          *Link;
-  BOOLEAN                             FindNameSpace;
-  EFI_DEVICE_PATH_PROTOCOL            *DestDevicePath;
-  UINT8                               *DevicePathPkg;
-  UINTN                               DevicePathSize;
+  HII_DATABASE_RECORD       *Record;
+  LIST_ENTRY                *Link;
+  BOOLEAN                   FindNameSpace;
+  EFI_DEVICE_PATH_PROTOCOL  *DestDevicePath;
+  UINT8                     *DevicePathPkg;
+  UINTN                     DevicePathSize;
 
   ASSERT ((NameSpace != NULL) && (KeywordData != NULL) && (ProgressErr != NULL) && (KeywordStringId != NULL) && (DataBaseRecord != NULL));
 
@@ -2283,7 +2360,7 @@ GetStringIdFromDatabase (
     //
     // Get DataBaseRecord from device path protocol.
     //
-    Record = GetRecordFromDevicePath(*DevicePath);
+    Record = GetRecordFromDevicePath (*DevicePath);
     if (Record == NULL) {
       //
       // Can't find the DatabaseRecord base on the input device path info.
@@ -2298,16 +2375,16 @@ GetStringIdFromDatabase (
     //
     *ProgressErr = GetStringIdFromRecord (Record, NameSpace, KeywordData, KeywordStringId);
     switch (*ProgressErr) {
-    case KEYWORD_HANDLER_NO_ERROR:
-      *DataBaseRecord = Record;
-      return EFI_SUCCESS;
+      case KEYWORD_HANDLER_NO_ERROR:
+        *DataBaseRecord = Record;
+        return EFI_SUCCESS;
 
-    case KEYWORD_HANDLER_NAMESPACE_ID_NOT_FOUND:
-      return EFI_INVALID_PARAMETER;
+      case KEYWORD_HANDLER_NAMESPACE_ID_NOT_FOUND:
+        return EFI_INVALID_PARAMETER;
 
-    default:
-      ASSERT (*ProgressErr == KEYWORD_HANDLER_KEYWORD_NOT_FOUND);
-      return EFI_NOT_FOUND;
+      default:
+        ASSERT (*ProgressErr == KEYWORD_HANDLER_KEYWORD_NOT_FOUND);
+        return EFI_NOT_FOUND;
     }
   } else {
     //
@@ -2319,11 +2396,11 @@ GetStringIdFromDatabase (
       *ProgressErr = GetStringIdFromRecord (Record, NameSpace, KeywordData, KeywordStringId);
       if (*ProgressErr == KEYWORD_HANDLER_NO_ERROR) {
         *DataBaseRecord = Record;
-        
+
         if ((DevicePathPkg = Record->PackageList->DevicePathPkg) != NULL) {
-          DestDevicePath = (EFI_DEVICE_PATH_PROTOCOL *) (DevicePathPkg + sizeof (EFI_HII_PACKAGE_HEADER));
-          DevicePathSize = GetDevicePathSize ((EFI_DEVICE_PATH_PROTOCOL *) DestDevicePath);
-          *DevicePath = AllocateCopyPool (DevicePathSize, DestDevicePath);
+          DestDevicePath = (EFI_DEVICE_PATH_PROTOCOL *)(DevicePathPkg + sizeof (EFI_HII_PACKAGE_HEADER));
+          DevicePathSize = GetDevicePathSize ((EFI_DEVICE_PATH_PROTOCOL *)DestDevicePath);
+          *DevicePath    = AllocateCopyPool (DevicePathSize, DestDevicePath);
           if (*DevicePath == NULL) {
             return EFI_OUT_OF_RESOURCES;
           }
@@ -2339,7 +2416,7 @@ GetStringIdFromDatabase (
         return EFI_OUT_OF_RESOURCES;
       } else if (*ProgressErr == KEYWORD_HANDLER_KEYWORD_NOT_FOUND) {
         FindNameSpace = TRUE;
-      }  
+      }
     }
 
     //
@@ -2355,7 +2432,7 @@ GetStringIdFromDatabase (
 }
 
 /**
-  Genereate the KeywordResp String.
+  Generate the KeywordResp String.
 
   <KeywordResp> ::= <NameSpaceId><PathHdr>'&'<Keyword>'&VALUE='<Number>['&READONLY']
 
@@ -2372,18 +2449,19 @@ GetStringIdFromDatabase (
 **/
 EFI_STATUS
 GenerateKeywordResp (
-  IN  CHAR8                          *NameSpace, 
-  IN  EFI_DEVICE_PATH_PROTOCOL       *DevicePath,
-  IN  EFI_STRING                     KeywordData,
-  IN  EFI_STRING                     ValueStr,
-  IN  BOOLEAN                        ReadOnly,
-  OUT EFI_STRING                     *KeywordResp
+  IN  CHAR8                     *NameSpace,
+  IN  EFI_DEVICE_PATH_PROTOCOL  *DevicePath,
+  IN  EFI_STRING                KeywordData,
+  IN  EFI_STRING                ValueStr,
+  IN  BOOLEAN                   ReadOnly,
+  OUT EFI_STRING                *KeywordResp
   )
 {
-  UINTN     RespStrLen;
-  CHAR16    *RespStr;
-  CHAR16    *PathHdr;
-  CHAR16    *UnicodeNameSpace;
+  UINTN   RespStrLen;
+  CHAR16  *RespStr;
+  CHAR16  *PathHdr;
+  CHAR16  *UnicodeNameSpace;
+  UINTN   NameSpaceLength;
 
   ASSERT ((NameSpace != NULL) && (DevicePath != NULL) && (KeywordData != NULL) && (ValueStr != NULL) && (KeywordResp != NULL));
 
@@ -2394,12 +2472,14 @@ GenerateKeywordResp (
   // 1.1 NameSpaceId size.
   // 'NAMESPACE='<String>
   //
-  RespStrLen = 10 + AsciiStrLen (NameSpace);
-  UnicodeNameSpace = AllocatePool ((AsciiStrLen (NameSpace) + 1) * sizeof (CHAR16));
+  NameSpaceLength  = AsciiStrLen (NameSpace);
+  RespStrLen       = 10 + NameSpaceLength;
+  UnicodeNameSpace = AllocatePool ((NameSpaceLength + 1) * sizeof (CHAR16));
   if (UnicodeNameSpace == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
-  AsciiStrToUnicodeStr(NameSpace, UnicodeNameSpace);
+
+  AsciiStrToUnicodeStrS (NameSpace, UnicodeNameSpace, NameSpaceLength + 1);
 
   //
   // 1.2 PathHdr size.
@@ -2408,15 +2488,15 @@ GenerateKeywordResp (
   //
   GenerateSubStr (
     L"&PATH=",
-    GetDevicePathSize ((EFI_DEVICE_PATH_PROTOCOL *) DevicePath),
-    (VOID *) DevicePath,
+    GetDevicePathSize ((EFI_DEVICE_PATH_PROTOCOL *)DevicePath),
+    (VOID *)DevicePath,
     1,
     &PathHdr
     );
   RespStrLen += StrLen (PathHdr);
 
   //
-  // 1.3 Keyword setion.
+  // 1.3 Keyword section.
   // 'KEYWORD='<String>[':'<DecCh>(1/4)]
   //
   RespStrLen += 8 + StrLen (KeywordData);
@@ -2438,7 +2518,7 @@ GenerateKeywordResp (
   //
   // 2. Allocate the buffer and create the KeywordResp string include '\0'.
   //
-  RespStrLen += 1;
+  RespStrLen  += 1;
   *KeywordResp = AllocatePool (RespStrLen * sizeof (CHAR16));
   if (*KeywordResp == NULL) {
     if (UnicodeNameSpace != NULL) {
@@ -2447,56 +2527,48 @@ GenerateKeywordResp (
 
     return EFI_OUT_OF_RESOURCES;
   }
+
   RespStr = *KeywordResp;
 
   //
   // 2.1 Copy NameSpaceId section.
   //
   StrCpyS (RespStr, RespStrLen, L"NAMESPACE=");
-  RespStr += StrLen (RespStr);
-  StrCpyS (RespStr, RespStrLen, UnicodeNameSpace);
-  RespStr += StrLen (RespStr);
+
+  StrCatS (RespStr, RespStrLen, UnicodeNameSpace);
 
   //
   // 2.2 Copy PathHdr section.
   //
-  StrCpyS (RespStr, RespStrLen, PathHdr);
-  RespStr += StrLen (RespStr);
+  StrCatS (RespStr, RespStrLen, PathHdr);
 
   //
   // 2.3 Copy Keyword section.
   //
-  StrCpyS (RespStr, RespStrLen, L"KEYWORD=");
-  RespStr += StrLen (RespStr);
-  StrCpyS (RespStr, RespStrLen, KeywordData);
-  RespStr += StrLen (RespStr);
+  StrCatS (RespStr, RespStrLen, L"KEYWORD=");
+
+  StrCatS (RespStr, RespStrLen, KeywordData);
 
   //
   // 2.4 Copy the Value section.
   //
-  StrCpyS (RespStr, RespStrLen, ValueStr);
-  RespStr += StrLen (RespStr);
+  StrCatS (RespStr, RespStrLen, ValueStr);
 
   //
   // 2.5 Copy ReadOnly section if exist.
   //
   if (ReadOnly) {
-    StrCpyS (RespStr, RespStrLen, L"&READONLY");
-    RespStr += StrLen (RespStr);
+    StrCatS (RespStr, RespStrLen, L"&READONLY");
   }
-
-  //
-  // 2.6 Add the end.
-  //
-  *RespStr = L'\0';
 
   if (UnicodeNameSpace != NULL) {
     FreePool (UnicodeNameSpace);
   }
+
   if (PathHdr != NULL) {
     FreePool (PathHdr);
   }
-  
+
   return EFI_SUCCESS;
 }
 
@@ -2514,8 +2586,8 @@ GenerateKeywordResp (
 **/
 EFI_STATUS
 MergeToMultiKeywordResp (
-  IN OUT EFI_STRING         *MultiKeywordResp,
-  IN     EFI_STRING         *KeywordResp
+  IN OUT EFI_STRING  *MultiKeywordResp,
+  IN     EFI_STRING  *KeywordResp
   )
 {
   UINTN       MultiKeywordRespLen;
@@ -2523,39 +2595,40 @@ MergeToMultiKeywordResp (
 
   if (*MultiKeywordResp == NULL) {
     *MultiKeywordResp = *KeywordResp;
-    *KeywordResp = NULL;
+    *KeywordResp      = NULL;
     return EFI_SUCCESS;
   }
 
   MultiKeywordRespLen = (StrLen (*MultiKeywordResp) + 1 + StrLen (*KeywordResp) + 1) * sizeof (CHAR16);
 
-  StringPtr = AllocateCopyPool (MultiKeywordRespLen, *MultiKeywordResp);
+  StringPtr = ReallocatePool (
+                StrSize (*MultiKeywordResp),
+                MultiKeywordRespLen,
+                *MultiKeywordResp
+                );
   if (StringPtr == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
-  
-  FreePool (*MultiKeywordResp);
+
   *MultiKeywordResp = StringPtr;
 
-  StringPtr += StrLen (StringPtr);
+  StrCatS (StringPtr, MultiKeywordRespLen / sizeof (CHAR16), L"&");
 
-  *StringPtr = L'&';
-  StringPtr++;
-
-  StrCpyS (StringPtr, MultiKeywordRespLen / sizeof (CHAR16), *KeywordResp);
+  StrCatS (StringPtr, MultiKeywordRespLen / sizeof (CHAR16), *KeywordResp);
 
   return EFI_SUCCESS;
 }
 
 /**
-  Enumerate all keyword in the system. 
-  
-  If error occur when parse one keyword, just skip it and parse the next one. 
+  Enumerate all keyword in the system.
+
+  If error occur when parse one keyword, just skip it and parse the next one.
 
   This is a internal function.
 
   @param  NameSpace                      The namespace used to search the string.
   @param  MultiResp                      Return the MultiKeywordResp string for the system.
+  @param  ProgressErr                    Return the error status.
 
   @retval EFI_OUT_OF_RESOURCES           The memory can't be allocated.
   @retval EFI_SUCCESS                    Generate the MultiKeywordResp string.
@@ -2564,8 +2637,9 @@ MergeToMultiKeywordResp (
 **/
 EFI_STATUS
 EnumerateAllKeywords (
-  IN  CHAR8             *NameSpace,
-  OUT EFI_STRING        *MultiResp
+  IN  CHAR8       *NameSpace,
+  OUT EFI_STRING  *MultiResp,
+  OUT UINT32      *ProgressErr
   )
 {
   LIST_ENTRY                          *Link;
@@ -2585,15 +2659,17 @@ EnumerateAllKeywords (
   CHAR16                              *MultiKeywordResp;
   CHAR16                              *KeywordData;
   BOOLEAN                             ReadOnly;
+  BOOLEAN                             FindKeywordPackages;
 
-  DataBaseRecord   = NULL;
-  Status           = EFI_SUCCESS;
-  MultiKeywordResp = NULL;
-  DevicePath       = NULL;
-  LocalNameSpace   = NULL;
-  ConfigRequest    = NULL;
-  ValueElement     = NULL;
-  KeywordResp      = NULL;
+  DataBaseRecord      = NULL;
+  Status              = EFI_SUCCESS;
+  MultiKeywordResp    = NULL;
+  DevicePath          = NULL;
+  LocalNameSpace      = NULL;
+  ConfigRequest       = NULL;
+  ValueElement        = NULL;
+  KeywordResp         = NULL;
+  FindKeywordPackages = FALSE;
 
   if (NameSpace == NULL) {
     NameSpace = UEFI_CONFIG_LANG;
@@ -2607,6 +2683,7 @@ EnumerateAllKeywords (
     if ((DevicePathPkg = DataBaseRecord->PackageList->DevicePathPkg) != NULL) {
       DevicePath = DevicePathPkg + sizeof (EFI_HII_PACKAGE_HEADER);
     }
+
     PackageListNode = DataBaseRecord->PackageList;
 
     for (StringLink = PackageListNode->StringPkgHdr.ForwardLink; StringLink != &PackageListNode->StringPkgHdr; StringLink = StringLink->ForwardLink) {
@@ -2615,7 +2692,8 @@ EnumerateAllKeywords (
       //
       // Check whether has keyword string package.
       //
-      if (AsciiStrnCmp(NameSpace, StringPackage->StringPkgHdr->Language, AsciiStrLen (NameSpace)) == 0) {
+      if (AsciiStrnCmp (NameSpace, StringPackage->StringPkgHdr->Language, AsciiStrLen (NameSpace)) == 0) {
+        FindKeywordPackages = TRUE;
         //
         // Keep the NameSpace string.
         //
@@ -2630,7 +2708,7 @@ EnumerateAllKeywords (
         // Any valid string start from 2. so here initial it to 1.
         //
         NextStringId = 1;
-        
+
         //
         // Enumerate all valid stringid in the package.
         //
@@ -2645,11 +2723,11 @@ EnumerateAllKeywords (
             //
             goto Error;
           }
-          
+
           //
           // 3.4 Extract Value for the input keyword.
           //
-          Status = ExtractValueFromDriver(ConfigRequest, &ValueElement);
+          Status = ExtractValueFromDriver (ConfigRequest, &ValueElement);
           if (EFI_ERROR (Status)) {
             if (Status != EFI_OUT_OF_RESOURCES) {
               //
@@ -2657,6 +2735,7 @@ EnumerateAllKeywords (
               //
               goto Error;
             }
+
             //
             // If EFI_OUT_OF_RESOURCES error occur, no need to continue.
             //
@@ -2666,27 +2745,28 @@ EnumerateAllKeywords (
           //
           // Extract readonly flag from opcode.
           //
-          ReadOnly = ExtractReadOnlyFromOpCode(OpCode);
+          ReadOnly = ExtractReadOnlyFromOpCode (OpCode);
 
           //
           // 5. Generate KeywordResp string.
           //
           ASSERT (DevicePath != NULL);
-          Status = GenerateKeywordResp(LocalNameSpace, (EFI_DEVICE_PATH_PROTOCOL *)DevicePath, KeywordData, ValueElement, ReadOnly, &KeywordResp);
+          Status = GenerateKeywordResp (LocalNameSpace, (EFI_DEVICE_PATH_PROTOCOL *)DevicePath, KeywordData, ValueElement, ReadOnly, &KeywordResp);
           if (Status != EFI_SUCCESS) {
             //
             // If EFI_OUT_OF_RESOURCES error occur, no need to continue.
             //
             goto Done;
           }
-          
+
           //
           // 6. Merge to the MultiKeywordResp string.
           //
-          Status = MergeToMultiKeywordResp(&MultiKeywordResp, &KeywordResp);
+          Status = MergeToMultiKeywordResp (&MultiKeywordResp, &KeywordResp);
           if (EFI_ERROR (Status)) {
             goto Done;
           }
+
 Error:
           //
           // Clean the temp buffer to later use again.
@@ -2695,14 +2775,16 @@ Error:
             FreePool (ConfigRequest);
             ConfigRequest = NULL;
           }
+
           if (ValueElement != NULL) {
             FreePool (ValueElement);
             ValueElement = NULL;
           }
+
           if (KeywordResp != NULL) {
             FreePool (KeywordResp);
             KeywordResp = NULL;
-          } 
+          }
         }
 
         if (LocalNameSpace != NULL) {
@@ -2710,26 +2792,34 @@ Error:
           LocalNameSpace = NULL;
         }
       }
-    } 
+    }
   }
 
   //
-  // return the already get MultiKeywordString even error occured.
+  // return the already get MultiKeywordString even error occurred.
   //
   if (MultiKeywordResp == NULL) {
     Status = EFI_NOT_FOUND;
+    if (!FindKeywordPackages) {
+      *ProgressErr = KEYWORD_HANDLER_NAMESPACE_ID_NOT_FOUND;
+    } else {
+      *ProgressErr = KEYWORD_HANDLER_KEYWORD_NOT_FOUND;
+    }
   } else {
     Status = EFI_SUCCESS;
   }
+
   *MultiResp = MultiKeywordResp;
-  
+
 Done:
   if (LocalNameSpace != NULL) {
     FreePool (LocalNameSpace);
   }
+
   if (ConfigRequest != NULL) {
     FreePool (ConfigRequest);
   }
+
   if (ValueElement != NULL) {
     FreePool (ValueElement);
   }
@@ -2742,18 +2832,18 @@ Done:
   This function accepts a <MultiKeywordResp> formatted string, finds the associated
   keyword owners, creates a <MultiConfigResp> string from it and forwards it to the
   EFI_HII_ROUTING_PROTOCOL.RouteConfig function.
-  
-  If there is an issue in resolving the contents of the KeywordString, then the 
-  function returns an error and also sets the Progress and ProgressErr with the 
+
+  If there is an issue in resolving the contents of the KeywordString, then the
+  function returns an error and also sets the Progress and ProgressErr with the
   appropriate information about where the issue occurred and additional data about
-  the nature of the issue. 
-  
+  the nature of the issue.
+
   In the case when KeywordString containing multiple keywords, when an EFI_NOT_FOUND
   error is generated during processing the second or later keyword element, the system
-  storage associated with earlier keywords is not modified. All elements of the 
+  storage associated with earlier keywords is not modified. All elements of the
   KeywordString must successfully pass all tests for format and access prior to making
   any modifications to storage.
-  
+
   In the case when EFI_DEVICE_ERROR is returned from the processing of a KeywordString
   containing multiple keywords, the state of storage associated with earlier keywords
   is undefined.
@@ -2761,17 +2851,18 @@ Done:
 
   @param This             Pointer to the EFI_KEYWORD_HANDLER _PROTOCOL instance.
 
-  @param KeywordString    A null-terminated string in <MultiKeywordResp> format. 
+  @param KeywordString    A null-terminated string in <MultiKeywordResp> format.
 
-  @param Progress         On return, points to a character in the KeywordString. 
-                          Points to the string's NULL terminator if the request 
-                          was successful. Points to the most recent '&' before 
-                          the first failing string element if the request was 
-                          not successful.
+  @param Progress         On return, points to a character in the KeywordString.
+                          Points to the string's NULL terminator if the request
+                          was successful. Points to the most recent '&' before
+                          the first failing name / value pair (or the beginning
+                          of the string if the failure is in the first name / value
+                          pair) if the request was not successful.
 
   @param ProgressErr      If during the processing of the KeywordString there was
-                          a failure, this parameter gives additional information 
-                          about the possible source of the problem. The various 
+                          a failure, this parameter gives additional information
+                          about the possible source of the problem. The various
                           errors are defined in "Related Definitions" below.
 
 
@@ -2779,16 +2870,16 @@ Done:
 
   @retval EFI_INVALID_PARAMETER   One or more of the following are TRUE:
                                   1. KeywordString is NULL.
-                                  2. Parsing of the KeywordString resulted in an 
+                                  2. Parsing of the KeywordString resulted in an
                                      error. See Progress and ProgressErr for more data.
 
-  @retval EFI_NOT_FOUND           An element of the KeywordString was not found. 
+  @retval EFI_NOT_FOUND           An element of the KeywordString was not found.
                                   See ProgressErr for more data.
 
-  @retval EFI_OUT_OF_RESOURCES    Required system resources could not be allocated.  
+  @retval EFI_OUT_OF_RESOURCES    Required system resources could not be allocated.
                                   See ProgressErr for more data.
-                                  
-  @retval EFI_ACCESS_DENIED       The action violated system policy. See ProgressErr 
+
+  @retval EFI_ACCESS_DENIED       The action violated system policy. See ProgressErr
                                   for more data.
 
   @retval EFI_DEVICE_ERROR        An unexpected system error occurred. See ProgressErr
@@ -2796,45 +2887,54 @@ Done:
 
 **/
 EFI_STATUS
-EFIAPI 
+EFIAPI
 EfiConfigKeywordHandlerSetData (
-  IN EFI_CONFIG_KEYWORD_HANDLER_PROTOCOL *This,
-  IN CONST EFI_STRING                    KeywordString,
-  OUT EFI_STRING                         *Progress,
-  OUT UINT32                             *ProgressErr
+  IN EFI_CONFIG_KEYWORD_HANDLER_PROTOCOL  *This,
+  IN CONST EFI_STRING                     KeywordString,
+  OUT EFI_STRING                          *Progress,
+  OUT UINT32                              *ProgressErr
   )
 {
-  CHAR8                               *NameSpace;
-  EFI_STATUS                          Status;
-  CHAR16                              *StringPtr;
-  EFI_DEVICE_PATH_PROTOCOL            *DevicePath;
-  CHAR16                              *NextStringPtr;  
-  CHAR16                              *KeywordData;
-  EFI_STRING_ID                       KeywordStringId;
-  UINT32                              RetVal;
-  HII_DATABASE_RECORD                 *DataBaseRecord;
-  UINT8                               *OpCode;
-  CHAR16                              *ConfigResp;
-  CHAR16                              *MultiConfigResp;
-  CHAR16                              *ValueElement;
-  BOOLEAN                             ReadOnly;
-  EFI_STRING                          InternalProgress;
+  CHAR8                     *NameSpace;
+  EFI_STATUS                Status;
+  CHAR16                    *StringPtr;
+  EFI_DEVICE_PATH_PROTOCOL  *DevicePath;
+  CHAR16                    *NextStringPtr;
+  CHAR16                    *KeywordData;
+  EFI_STRING_ID             KeywordStringId;
+  UINT32                    RetVal;
+  HII_DATABASE_RECORD       *DataBaseRecord;
+  UINT8                     *OpCode;
+  CHAR16                    *ConfigResp;
+  CHAR16                    *MultiConfigResp;
+  CHAR16                    *ValueElement;
+  BOOLEAN                   ReadOnly;
+  EFI_STRING                InternalProgress;
+  CHAR16                    *TempString;
+  CHAR16                    *KeywordStartPos;
 
-  if (This == NULL || Progress == NULL || ProgressErr == NULL || KeywordString == NULL) {
+  if ((This == NULL) || (Progress == NULL) || (ProgressErr == NULL) || (KeywordString == NULL)) {
     return EFI_INVALID_PARAMETER;
   }
 
-  *Progress    = KeywordString;
-  *ProgressErr = KEYWORD_HANDLER_UNDEFINED_PROCESSING_ERROR;
-  Status       = EFI_SUCCESS;
-  StringPtr    = KeywordString;
+  *Progress       = KeywordString;
+  *ProgressErr    = KEYWORD_HANDLER_UNDEFINED_PROCESSING_ERROR;
+  Status          = EFI_SUCCESS;
   MultiConfigResp = NULL;
   NameSpace       = NULL;
   DevicePath      = NULL;
   KeywordData     = NULL;
   ValueElement    = NULL;
   ConfigResp      = NULL;
+  KeywordStartPos = NULL;
   KeywordStringId = 0;
+
+  //
+  // Use temp string to avoid changing input string buffer.
+  //
+  TempString = AllocateCopyPool (StrSize (KeywordString), KeywordString);
+  ASSERT (TempString != NULL);
+  StringPtr = TempString;
 
   while ((StringPtr != NULL) && (*StringPtr != L'\0')) {
     //
@@ -2843,8 +2943,19 @@ EfiConfigKeywordHandlerSetData (
     Status = ExtractNameSpace (StringPtr, &NameSpace, &NextStringPtr);
     if (EFI_ERROR (Status)) {
       *ProgressErr = KEYWORD_HANDLER_MALFORMED_STRING;
-      return Status;
+      goto Done;
     }
+
+    ASSERT (NameSpace != NULL);
+    //
+    // 1.1 Check whether the input namespace is valid.
+    //
+    if (AsciiStrnCmp (NameSpace, UEFI_CONFIG_LANG, AsciiStrLen (UEFI_CONFIG_LANG)) != 0) {
+      *ProgressErr = KEYWORD_HANDLER_MALFORMED_STRING;
+      Status       = EFI_INVALID_PARAMETER;
+      goto Done;
+    }
+
     StringPtr = NextStringPtr;
 
     //
@@ -2855,20 +2966,23 @@ EfiConfigKeywordHandlerSetData (
       *ProgressErr = KEYWORD_HANDLER_MALFORMED_STRING;
       goto Done;
     }
+
     StringPtr = NextStringPtr;
 
     //
     // 3. Extract keyword from the KeywordRequest string.
     //
-    Status = ExtractKeyword(StringPtr, &KeywordData, &NextStringPtr);
+    KeywordStartPos = StringPtr;
+    Status          = ExtractKeyword (StringPtr, &KeywordData, &NextStringPtr);
     if (EFI_ERROR (Status)) {
       //
       // Can't find Keyword base on the input device path info.
       //
       *ProgressErr = KEYWORD_HANDLER_MALFORMED_STRING;
-      Status = EFI_INVALID_PARAMETER;
+      Status       = EFI_INVALID_PARAMETER;
       goto Done;
     }
+
     StringPtr = NextStringPtr;
 
     //
@@ -2880,17 +2994,18 @@ EfiConfigKeywordHandlerSetData (
       // Can't find Value base on the input device path info.
       //
       *ProgressErr = KEYWORD_HANDLER_MALFORMED_STRING;
-      Status = EFI_INVALID_PARAMETER;
+      Status       = EFI_INVALID_PARAMETER;
       goto Done;
     }
+
     StringPtr = NextStringPtr;
 
     //
-    // 5. Find ReadOnly filter.
+    // 5. Find READONLY tag.
     //
-    if ((StringPtr != NULL) && StrnCmp (StringPtr, L"&ReadOnly", StrLen (L"&ReadOnly")) == 0) {
-      ReadOnly = TRUE;
-      StringPtr += StrLen (L"&ReadOnly");
+    if ((StringPtr != NULL) && (StrnCmp (StringPtr, L"&READONLY", StrLen (L"&READONLY")) == 0)) {
+      ReadOnly   = TRUE;
+      StringPtr += StrLen (L"&READONLY");
     } else {
       ReadOnly = FALSE;
     }
@@ -2916,15 +3031,25 @@ EfiConfigKeywordHandlerSetData (
     // 8. Check the readonly flag.
     //
     if (ExtractReadOnlyFromOpCode (OpCode) != ReadOnly) {
+      //
+      // Extracting readonly flag form opcode and extracting "READONLY" tag form KeywordString should have the same results.
+      // If not, the input KeywordString must be incorrect, return the error status to caller.
+      //
       *ProgressErr = KEYWORD_HANDLER_INCOMPATIBLE_VALUE_DETECTED;
-      Status = EFI_INVALID_PARAMETER;
-      goto Done;      
+      Status       = EFI_INVALID_PARAMETER;
+      goto Done;
     }
-    
+
+    if (ReadOnly) {
+      *ProgressErr = KEYWORD_HANDLER_ACCESS_NOT_PERMITTED;
+      Status       = EFI_ACCESS_DENIED;
+      goto Done;
+    }
+
     //
     // 9. Merge to the MultiKeywordResp string.
     //
-    Status = MergeToMultiKeywordResp(&MultiConfigResp, &ConfigResp);
+    Status = MergeToMultiKeywordResp (&MultiConfigResp, &ConfigResp);
     if (EFI_ERROR (Status)) {
       goto Done;
     }
@@ -2936,105 +3061,121 @@ EfiConfigKeywordHandlerSetData (
     FreePool (DevicePath);
     FreePool (KeywordData);
     FreePool (ValueElement);
-    NameSpace = NULL;
-    DevicePath = NULL; 
-    KeywordData = NULL;
+    NameSpace    = NULL;
+    DevicePath   = NULL;
+    KeywordData  = NULL;
     ValueElement = NULL;
     if (ConfigResp != NULL) {
       FreePool (ConfigResp);
       ConfigResp = NULL;
     }
+
+    KeywordStartPos = NULL;
   }
 
   //
   // 11. Set value to driver.
   //
-  Status = mPrivate.ConfigRouting.RouteConfig(
-                    &mPrivate.ConfigRouting,
-                    (EFI_STRING) MultiConfigResp,
-                    &InternalProgress
-                    );
+  Status = mPrivate.ConfigRouting.RouteConfig (
+                                    &mPrivate.ConfigRouting,
+                                    (EFI_STRING)MultiConfigResp,
+                                    &InternalProgress
+                                    );
   if (EFI_ERROR (Status)) {
     Status = EFI_DEVICE_ERROR;
     goto Done;
   }
-  
+
   *ProgressErr = KEYWORD_HANDLER_NO_ERROR;
 
 Done:
+  if (KeywordStartPos != NULL) {
+    *Progress = KeywordString + (KeywordStartPos - TempString);
+  } else {
+    *Progress = KeywordString + (StringPtr - TempString);
+  }
+
+  ASSERT (TempString != NULL);
+  FreePool (TempString);
   if (NameSpace != NULL) {
     FreePool (NameSpace);
   }
+
   if (DevicePath != NULL) {
     FreePool (DevicePath);
   }
+
   if (KeywordData != NULL) {
     FreePool (KeywordData);
   }
+
   if (ValueElement != NULL) {
     FreePool (ValueElement);
   }
+
   if (ConfigResp != NULL) {
     FreePool (ConfigResp);
   }
-  if (MultiConfigResp != NULL && MultiConfigResp != ConfigResp) {
+
+  if ((MultiConfigResp != NULL) && (MultiConfigResp != ConfigResp)) {
     FreePool (MultiConfigResp);
-  }  
-  *Progress = StringPtr;
+  }
+
   return Status;
 }
 
 /**
 
-  This function accepts a <MultiKeywordRequest> formatted string, finds the underlying 
+  This function accepts a <MultiKeywordRequest> formatted string, finds the underlying
   keyword owners, creates a <MultiConfigRequest> string from it and forwards it to the
   EFI_HII_ROUTING_PROTOCOL.ExtractConfig function.
-  
+
   If there is an issue in resolving the contents of the KeywordString, then the function
   returns an EFI_INVALID_PARAMETER and also set the Progress and ProgressErr with the
   appropriate information about where the issue occurred and additional data about the
   nature of the issue.
-  
+
   In the case when KeywordString is NULL, or contains multiple keywords, or when
   EFI_NOT_FOUND is generated while processing the keyword elements, the Results string
-  contains values returned for all keywords processed prior to the keyword generating the 
+  contains values returned for all keywords processed prior to the keyword generating the
   error but no values for the keyword with error or any following keywords.
 
-  
+
   @param This           Pointer to the EFI_KEYWORD_HANDLER _PROTOCOL instance.
-  
+
   @param NameSpaceId    A null-terminated string containing the platform configuration
                         language to search through in the system. If a NULL is passed
                         in, then it is assumed that any platform configuration language
                         with the prefix of "x-UEFI-" are searched.
-                        
+
   @param KeywordString  A null-terminated string in <MultiKeywordRequest> format. If a
-                        NULL is passed in the KeywordString field, all of the known 
-                        keywords in the system for the NameSpaceId specified are 
+                        NULL is passed in the KeywordString field, all of the known
+                        keywords in the system for the NameSpaceId specified are
                         returned in the Results field.
-  
+
   @param Progress       On return, points to a character in the KeywordString. Points
-                        to the string's NULL terminator if the request was successful. 
-                        Points to the most recent '&' before the first failing string
-                        element if the request was not successful.
-                        
+                        to the string's NULL terminator if the request was successful.
+                        Points to the most recent '&' before the first failing name / value
+                        pair (or the beginning of the string if the failure is in the first
+                        name / value pair) if the request was not successful.
+
   @param ProgressErr    If during the processing of the KeywordString there was a
-                        failure, this parameter gives additional information about the 
+                        failure, this parameter gives additional information about the
                         possible source of the problem. See the definitions in SetData()
                         for valid value definitions.
-  
+
   @param Results        A null-terminated string in <MultiKeywordResp> format is returned
-                        which has all the values filled in for the keywords in the 
+                        which has all the values filled in for the keywords in the
                         KeywordString. This is a callee-allocated field, and must be freed
-                        by the caller after being used. 
+                        by the caller after being used.
 
   @retval EFI_SUCCESS             The specified action was completed successfully.
-  
+
   @retval EFI_INVALID_PARAMETER   One or more of the following are TRUE:
-                                  1.Progress, ProgressErr, or Resuts is NULL.
+                                  1.Progress, ProgressErr, or Results is NULL.
                                   2.Parsing of the KeywordString resulted in an error. See
                                     Progress and ProgressErr for more data.
-  
+
 
   @retval EFI_NOT_FOUND           An element of the KeywordString was not found. See
                                   ProgressErr for more data.
@@ -3044,7 +3185,7 @@ Done:
 
   @retval EFI_OUT_OF_RESOURCES    Required system resources could not be allocated.  See
                                   ProgressErr for more data.
-                                  
+
   @retval EFI_ACCESS_DENIED       The action violated system policy.  See ProgressErr for
                                   more data.
 
@@ -3053,58 +3194,88 @@ Done:
 
 **/
 EFI_STATUS
-EFIAPI 
+EFIAPI
 EfiConfigKeywordHandlerGetData (
   IN EFI_CONFIG_KEYWORD_HANDLER_PROTOCOL  *This,
-  IN CONST EFI_STRING                     NameSpaceId, OPTIONAL
-  IN CONST EFI_STRING                     KeywordString, OPTIONAL
-  OUT EFI_STRING                          *Progress, 
+  IN CONST EFI_STRING                     NameSpaceId  OPTIONAL,
+  IN CONST EFI_STRING                     KeywordString  OPTIONAL,
+  OUT EFI_STRING                          *Progress,
   OUT UINT32                              *ProgressErr,
   OUT EFI_STRING                          *Results
   )
 {
-  CHAR8                               *NameSpace;
-  EFI_STATUS                          Status;
-  EFI_DEVICE_PATH_PROTOCOL            *DevicePath;
-  HII_DATABASE_RECORD                 *DataBaseRecord;
-  CHAR16                              *StringPtr;
-  CHAR16                              *NextStringPtr;  
-  CHAR16                              *KeywordData;
-  EFI_STRING_ID                       KeywordStringId;
-  UINT8                               *OpCode;
-  CHAR16                              *ConfigRequest;
-  CHAR16                              *ValueElement;
-  UINT32                              RetVal;
-  BOOLEAN                             ReadOnly;
-  CHAR16                              *KeywordResp;
-  CHAR16                              *MultiKeywordResp;
+  CHAR8                     *NameSpace;
+  EFI_STATUS                Status;
+  EFI_DEVICE_PATH_PROTOCOL  *DevicePath;
+  HII_DATABASE_RECORD       *DataBaseRecord;
+  CHAR16                    *StringPtr;
+  CHAR16                    *NextStringPtr;
+  CHAR16                    *KeywordData;
+  EFI_STRING_ID             KeywordStringId;
+  UINT8                     *OpCode;
+  CHAR16                    *ConfigRequest;
+  CHAR16                    *ValueElement;
+  UINT32                    RetVal;
+  BOOLEAN                   ReadOnly;
+  CHAR16                    *KeywordResp;
+  CHAR16                    *MultiKeywordResp;
+  CHAR16                    *TempString;
 
-  if (This == NULL || Progress == NULL || ProgressErr == NULL || Results == NULL) {
+  if ((This == NULL) || (Progress == NULL) || (ProgressErr == NULL) || (Results == NULL)) {
     return EFI_INVALID_PARAMETER;
   }
 
-  *ProgressErr = KEYWORD_HANDLER_UNDEFINED_PROCESSING_ERROR;
-  Status       = EFI_SUCCESS;
-  DevicePath   = NULL;
-  NameSpace    = NULL;
-  KeywordData  = NULL;
-  ConfigRequest= NULL;
-  StringPtr    = KeywordString;
-  ReadOnly     = FALSE;
+  *ProgressErr     = KEYWORD_HANDLER_UNDEFINED_PROCESSING_ERROR;
+  Status           = EFI_SUCCESS;
+  DevicePath       = NULL;
+  NameSpace        = NULL;
+  KeywordData      = NULL;
+  ConfigRequest    = NULL;
+  StringPtr        = KeywordString;
+  ReadOnly         = FALSE;
   MultiKeywordResp = NULL;
   KeywordStringId  = 0;
+  TempString       = NULL;
+
+  //
+  // Use temp string to avoid changing input string buffer.
+  //
+  if (NameSpaceId != NULL) {
+    TempString = AllocateCopyPool (StrSize (NameSpaceId), NameSpaceId);
+    ASSERT (TempString != NULL);
+  }
 
   //
   // 1. Get NameSpace from NameSpaceId keyword.
   //
-  Status = ExtractNameSpace (NameSpaceId, &NameSpace, NULL);
+  Status = ExtractNameSpace (TempString, &NameSpace, NULL);
+  if (TempString != NULL) {
+    FreePool (TempString);
+    TempString = NULL;
+  }
+
   if (EFI_ERROR (Status)) {
-    *ProgressErr = KEYWORD_HANDLER_NAMESPACE_ID_NOT_FOUND;
+    *ProgressErr = KEYWORD_HANDLER_MALFORMED_STRING;
     return Status;
   }
 
+  //
+  // 1.1 Check whether the input namespace is valid.
+  //
+  if (NameSpace != NULL) {
+    if (AsciiStrnCmp (NameSpace, UEFI_CONFIG_LANG, AsciiStrLen (UEFI_CONFIG_LANG)) != 0) {
+      *ProgressErr = KEYWORD_HANDLER_MALFORMED_STRING;
+      return EFI_INVALID_PARAMETER;
+    }
+  }
+
   if (KeywordString != NULL) {
-    StringPtr = KeywordString;
+    //
+    // Use temp string to avoid changing input string buffer.
+    //
+    TempString = AllocateCopyPool (StrSize (KeywordString), KeywordString);
+    ASSERT (TempString != NULL);
+    StringPtr = TempString;
 
     while (*StringPtr != L'\0') {
       //
@@ -3115,21 +3286,21 @@ EfiConfigKeywordHandlerGetData (
         *ProgressErr = KEYWORD_HANDLER_MALFORMED_STRING;
         goto Done;
       }
+
       StringPtr = NextStringPtr;
 
-     
       //
       // 3. Process Keyword section from the input keywordRequest string.
       //
       // 3.1 Extract keyword from the KeywordRequest string.
       //
-      Status = ExtractKeyword(StringPtr, &KeywordData, &NextStringPtr);
+      Status = ExtractKeyword (StringPtr, &KeywordData, &NextStringPtr);
       if (EFI_ERROR (Status)) {
         //
         // Can't find Keyword base on the input device path info.
         //
         *ProgressErr = KEYWORD_HANDLER_MALFORMED_STRING;
-        Status = EFI_INVALID_PARAMETER;
+        Status       = EFI_INVALID_PARAMETER;
         goto Done;
       }
 
@@ -3149,17 +3320,19 @@ EfiConfigKeywordHandlerGetData (
       if (EFI_ERROR (Status)) {
         goto Done;
       }
-      
+
       //
       // 3.4 Extract Value for the input keyword.
       //
-      Status = ExtractValueFromDriver(ConfigRequest, &ValueElement);
+      Status = ExtractValueFromDriver (ConfigRequest, &ValueElement);
       if (EFI_ERROR (Status)) {
         if (Status != EFI_OUT_OF_RESOURCES) {
           Status = EFI_DEVICE_ERROR;
         }
+
         goto Done;
       }
+
       StringPtr = NextStringPtr;
 
       //
@@ -3168,16 +3341,16 @@ EfiConfigKeywordHandlerGetData (
       RetVal = ValidateFilter (OpCode, StringPtr, &NextStringPtr, &ReadOnly);
       if (RetVal != KEYWORD_HANDLER_NO_ERROR) {
         *ProgressErr = RetVal;
-        Status = EFI_INVALID_PARAMETER;
+        Status       = EFI_INVALID_PARAMETER;
         goto Done;
       }
-      StringPtr = NextStringPtr;
 
+      StringPtr = NextStringPtr;
 
       //
       // 5. Generate KeywordResp string.
       //
-      Status = GenerateKeywordResp(NameSpace, DevicePath, KeywordData, ValueElement, ReadOnly, &KeywordResp);
+      Status = GenerateKeywordResp (NameSpace, DevicePath, KeywordData, ValueElement, ReadOnly, &KeywordResp);
       if (Status != EFI_SUCCESS) {
         goto Done;
       }
@@ -3185,7 +3358,7 @@ EfiConfigKeywordHandlerGetData (
       //
       // 6. Merge to the MultiKeywordResp string.
       //
-      Status = MergeToMultiKeywordResp(&MultiKeywordResp, &KeywordResp);
+      Status = MergeToMultiKeywordResp (&MultiKeywordResp, &KeywordResp);
       if (EFI_ERROR (Status)) {
         goto Done;
       }
@@ -3202,9 +3375,9 @@ EfiConfigKeywordHandlerGetData (
       FreePool (KeywordData);
       FreePool (ValueElement);
       FreePool (ConfigRequest);
-      DevicePath = NULL; 
-      KeywordData = NULL;
-      ValueElement = NULL;
+      DevicePath    = NULL;
+      KeywordData   = NULL;
+      ValueElement  = NULL;
       ConfigRequest = NULL;
       if (KeywordResp != NULL) {
         FreePool (KeywordResp);
@@ -3215,25 +3388,34 @@ EfiConfigKeywordHandlerGetData (
     //
     // Enumerate all keyword in the system.
     //
-    Status = EnumerateAllKeywords(NameSpace, &MultiKeywordResp);
+    Status = EnumerateAllKeywords (NameSpace, &MultiKeywordResp, ProgressErr);
     if (EFI_ERROR (Status)) {
       goto Done;
     }
+
     *Results = MultiKeywordResp;
   }
 
   *ProgressErr = KEYWORD_HANDLER_NO_ERROR;
 
 Done:
+  *Progress = KeywordString + (StringPtr - TempString);
+
+  if (TempString != NULL) {
+    FreePool (TempString);
+  }
+
   if (NameSpace != NULL) {
     FreePool (NameSpace);
   }
+
   if (DevicePath != NULL) {
     FreePool (DevicePath);
   }
+
   if (KeywordData != NULL) {
     FreePool (KeywordData);
   }
-  *Progress = StringPtr;
+
   return Status;
 }

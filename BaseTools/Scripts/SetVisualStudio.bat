@@ -2,7 +2,7 @@
 @REM Windows batch file to set up the Microsoft Visual Studio environment
 @REM
 @REM This script is used to set up one of the Microsoft Visual Studio
-@REM environments, VS2008x86, VS2010x86, VS2012x86 or VS2013x86 for
+@REM environments, VS2015 for
 @REM building the Nt32Pkg/Nt32Pkg.dsc emulation environment to run on
 @REM an X64 version of Windows.
 @REM The system environment variables in this script are set by the
@@ -11,13 +11,7 @@
 @REM This script can also be used to build the Win32 binaries
 @REM
 @REM Copyright (c) 2014, Intel Corporation. All rights reserved.<BR>
-@REM This program and the accompanying materials
-@REM are licensed and made available under the terms and conditions of the BSD License
-@REM which accompanies this distribution.  The full text of the license may be found at
-@REM http://opensource.org/licenses/bsd-license.php
-@REM
-@REM THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-@REM WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+@REM SPDX-License-Identifier: BSD-2-Clause-Patent
 @REM
 @echo off
 @if defined NT32_X64 @goto CheckLatest
@@ -25,23 +19,8 @@
 
 :CheckLatest
 echo.
-@if defined VS120COMNTOOLS (
-   @set "COMMONTOOLSx64=C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\x86_amd64"
-   @goto SetVs
-)
-
-@if defined VS110COMNTOOLS (
-   @set "COMMONTOOLSx64=C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\bin\x86_amd64"
-   @goto SetVs
-)
-
-@if defined VS100COMNTOOLS (
-   @set "COMMONTOOLSx64=C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64"
-   @goto SetVs
-)
-
-@if defined VS90COMNTOOLS (
-   @set "COMMONTOOLSx64=C:\Program Files (x86)\Microsoft Visual Studio 9.0\VC\bin\x86_amd64"
+@if defined VS140COMNTOOLS (
+   @set "COMMONTOOLSx64=C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\bin\x86_amd64"
    @goto SetVs
 )
 @echo.
@@ -68,7 +47,7 @@ if not exist "%COMMONTOOLSx64%\vcvarsx86_amd64.bat" (
 @goto End
 
 :RebuildTools
-@call python "%WORKSPACE%\BaseTools\Scripts\UpdateBuildVersions.py"
+@call python "%BASE_TOOLS_PATH%\Scripts\UpdateBuildVersions.py"
 @set "BIN_DIR=%EDK_TOOLS_PATH%\Bin\Win32"
 if not exist "%BIN_DIR%" @mkdir "%BIN_DIR%"
 @echo Removing temporary and binary files

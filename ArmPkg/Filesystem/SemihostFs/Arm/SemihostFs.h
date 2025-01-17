@@ -3,23 +3,17 @@
 
   Copyright (c) 2008 - 2009, Apple Inc. All rights reserved.<BR>
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __SEMIHOST_FS_H__
-#define __SEMIHOST_FS_H__
+#ifndef SEMIHOST_FS_H_
+#define SEMIHOST_FS_H_
 
 EFI_STATUS
 VolumeOpen (
-  IN  EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *This,
-  OUT EFI_FILE                        **Root
+  IN  EFI_SIMPLE_FILE_SYSTEM_PROTOCOL  *This,
+  OUT EFI_FILE                         **Root
   );
 
 /**
@@ -85,7 +79,7 @@ FileClose (
 **/
 EFI_STATUS
 FileDelete (
-  IN EFI_FILE *This
+  IN EFI_FILE  *This
   );
 
 /**
@@ -133,9 +127,9 @@ FileRead (
 **/
 EFI_STATUS
 FileWrite (
-  IN     EFI_FILE *This,
-  IN OUT UINTN    *BufferSize,
-  IN     VOID     *Buffer
+  IN     EFI_FILE  *This,
+  IN OUT UINTN     *BufferSize,
+  IN     VOID      *Buffer
   );
 
 /**
@@ -151,8 +145,8 @@ FileWrite (
 **/
 EFI_STATUS
 FileGetPosition (
-  IN  EFI_FILE    *File,
-  OUT UINT64      *Position
+  IN  EFI_FILE  *File,
+  OUT UINT64    *Position
   );
 
 /**
@@ -163,15 +157,15 @@ FileGetPosition (
   @param[in]  Position  The byte position from the start of the file to set.
 
   @retval  EFI_SUCCESS       The position was set.
-  @retval  EFI_DEVICE_ERROR  The semi-hosting positionning operation failed.
+  @retval  EFI_DEVICE_ERROR  The semi-hosting positioning operation failed.
   @retval  EFI_UNSUPPORTED   The seek request for nonzero is not valid on open
                              directories.
 
 **/
 EFI_STATUS
 FileSetPosition (
-  IN EFI_FILE *File,
-  IN UINT64   Position
+  IN EFI_FILE  *File,
+  IN UINT64    Position
   );
 
 /**
@@ -245,8 +239,7 @@ FileSetInfo (
 
 EFI_STATUS
 FileFlush (
-  IN EFI_FILE *File
+  IN EFI_FILE  *File
   );
 
-#endif // __SEMIHOST_FS_H__
-
+#endif // SEMIHOST_FS_H_

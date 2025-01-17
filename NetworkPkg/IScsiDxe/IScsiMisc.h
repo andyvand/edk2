@@ -1,14 +1,9 @@
 /** @file
   Miscellaneous definitions for iSCSI driver.
 
-Copyright (c) 2004 - 2014, Intel Corporation. All rights reserved.<BR>
-This program and the accompanying materials
-are licensed and made available under the terms and conditions of the BSD License
-which accompanies this distribution.  The full text of the license may be found at
-http://opensource.org/licenses/bsd-license.php
-
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+Copyright (c) 2004 - 2018, Intel Corporation. All rights reserved.<BR>
+Copyright (c) Microsoft Corporation
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -17,26 +12,50 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 
 typedef struct _ISCSI_DRIVER_DATA ISCSI_DRIVER_DATA;
 
+///
+/// IPv4 Device Path Node Length
+///
+#define IP4_NODE_LEN_NEW_VERSIONS  27
+
+///
+/// IPv6 Device Path Node Length
+///
+#define IP6_NODE_LEN_OLD_VERSIONS  43
+#define IP6_NODE_LEN_NEW_VERSIONS  60
+
+///
+/// The ignored field StaticIpAddress's offset in old IPv6 Device Path
+///
+#define IP6_OLD_IPADDRESS_OFFSET  42
+
 #pragma pack(1)
 typedef struct _ISCSI_SESSION_CONFIG_NVDATA {
-  UINT16            TargetPort;
-  UINT8             Enabled;
-  UINT8             IpMode;
+  UINT16              TargetPort;
+  UINT8               Enabled;
+  UINT8               IpMode;
 
-  EFI_IP_ADDRESS    LocalIp;
-  EFI_IPv4_ADDRESS  SubnetMask;
-  EFI_IP_ADDRESS    Gateway;
+  EFI_IP_ADDRESS      LocalIp;
+  EFI_IPv4_ADDRESS    SubnetMask;
+  EFI_IP_ADDRESS      Gateway;
 
-  BOOLEAN           InitiatorInfoFromDhcp;
-  BOOLEAN           TargetInfoFromDhcp;
-  CHAR8             TargetName[ISCSI_NAME_MAX_SIZE];
-  EFI_IP_ADDRESS    TargetIp;
-  UINT8             PrefixLength;
-  UINT8             BootLun[8];
+  BOOLEAN             InitiatorInfoFromDhcp;
+  BOOLEAN             TargetInfoFromDhcp;
 
-  UINT16            ConnectTimeout; ///< timout value in milliseconds
-  UINT8             ConnectRetryCount;
-  UINT8             IsId[6];
+  CHAR8               TargetName[ISCSI_NAME_MAX_SIZE];
+  EFI_IP_ADDRESS      TargetIp;
+  UINT8               PrefixLength;
+  UINT8               BootLun[8];
+
+  UINT16              ConnectTimeout; ///< timeout value in milliseconds.
+  UINT8               ConnectRetryCount;
+  UINT8               IsId[6];
+
+  BOOLEAN             RedirectFlag;
+  UINT16              OriginalTargetPort;   // The port of proxy/virtual target.
+  EFI_IP_ADDRESS      OriginalTargetIp;     // The address of proxy/virtual target.
+
+  BOOLEAN             DnsMode; // Flag indicate whether the Target address is expressed as URL format.
+  CHAR8               TargetUrl[ISCSI_TARGET_URI_MAX_SIZE];
 } ISCSI_SESSION_CONFIG_NVDATA;
 #pragma pack()
 
@@ -55,7 +74,7 @@ IScsiGetSubnetMaskPrefixLength (
   );
 
 /**
-  Convert the hexadecimal encoded LUN string into the 64-bit LUN. 
+  Convert the hexadecimal encoded LUN string into the 64-bit LUN.
 
   @param[in]   Str             The hexadecimal encoded LUN string.
   @param[out]  Lun             Storage to return the 64-bit LUN.
@@ -84,7 +103,7 @@ IScsiLunToUnicodeStr (
   );
 
 /**
-  Convert the mac address into a hexadecimal encoded "-" seperated string.
+  Convert the mac address into a hexadecimal encoded "-" separated string.
 
   @param[in]  Mac     The mac address.
   @param[in]  Len     Length in bytes of the mac address.
@@ -114,9 +133,9 @@ IScsiMacAddrToStr (
 **/
 EFI_STATUS
 IScsiAsciiStrToIp (
-  IN  CHAR8             *Str,
-  IN  UINT8             IpMode,
-  OUT EFI_IP_ADDRESS    *Ip
+  IN  CHAR8           *Str,
+  IN  UINT8           IpMode,
+  OUT EFI_IP_ADDRESS  *Ip
   );
 
 /**
@@ -127,39 +146,43 @@ IScsiAsciiStrToIp (
   @param[in, out]  HexStr      Pointer to the string.
   @param[in, out]  HexLength   The length of the string.
 
-  @retval EFI_SUCCESS          The binary data is converted to the hexadecimal string 
+  @retval EFI_SUCCESS          The binary data is converted to the hexadecimal string
                                and the length of the string is updated.
   @retval EFI_BUFFER_TOO_SMALL The string is too small.
+  @retval EFI_BAD_BUFFER_SIZE  BinLength is too large for hex encoding.
   @retval EFI_INVALID_PARAMETER The IP string is malformatted.
 
 **/
 EFI_STATUS
 IScsiBinToHex (
-  IN     UINT8  *BinBuffer,
-  IN     UINT32 BinLength,
-  IN OUT CHAR8  *HexStr,
-  IN OUT UINT32 *HexLength
+  IN     UINT8   *BinBuffer,
+  IN     UINT32  BinLength,
+  IN OUT CHAR8   *HexStr,
+  IN OUT UINT32  *HexLength
   );
 
 /**
   Convert the hexadecimal string into a binary encoded buffer.
 
-  @param[in, out]  BinBuffer   The binary buffer.
-  @param[in, out]  BinLength   Length of the binary buffer.
-  @param[in]       HexStr      The hexadecimal string.
+  @param[in, out]  BinBuffer    The binary buffer.
+  @param[in, out]  BinLength    Length of the binary buffer.
+  @param[in]       HexStr       The hexadecimal string.
 
-  @retval EFI_SUCCESS          The hexadecimal string is converted into a binary
-                               encoded buffer.
-  @retval EFI_BUFFER_TOO_SMALL The binary buffer is too small to hold the converted data.
-
+  @retval EFI_SUCCESS           The hexadecimal string is converted into a
+                                binary encoded buffer.
+  @retval EFI_INVALID_PARAMETER Invalid hex encoding found in HexStr.
+  @retval EFI_BAD_BUFFER_SIZE   The length of HexStr is too large for decoding:
+                                the decoded size cannot be expressed in
+                                BinLength on output.
+  @retval EFI_BUFFER_TOO_SMALL  The binary buffer is too small to hold the
+                                converted data.
 **/
 EFI_STATUS
 IScsiHexToBin (
-  IN OUT UINT8  *BinBuffer,
-  IN OUT UINT32 *BinLength,
-  IN     CHAR8  *HexStr
+  IN OUT UINT8   *BinBuffer,
+  IN OUT UINT32  *BinLength,
+  IN     CHAR8   *HexStr
   );
-
 
 /**
   Convert the decimal-constant string or hex-constant string into a numerical value.
@@ -180,8 +203,11 @@ IScsiNetNtoi (
   @param[in, out]  Rand       The buffer to contain random numbers.
   @param[in]       RandLength The length of the Rand buffer.
 
+  @retval EFI_SUCCESS on success
+  @retval others      on error
+
 **/
-VOID
+EFI_STATUS
 IScsiGenRandom (
   IN OUT UINT8  *Rand,
   IN     UINTN  RandLength
@@ -191,6 +217,7 @@ IScsiGenRandom (
   Record the NIC information in a global structure.
 
   @param[in]  Controller         The handle of the controller.
+  @param[in]  Image              Handle of the image.
 
   @retval EFI_SUCCESS            The operation is completed.
   @retval EFI_OUT_OF_RESOURCES   Do not have sufficient resource to finish this
@@ -199,7 +226,8 @@ IScsiGenRandom (
 **/
 EFI_STATUS
 IScsiAddNic (
-  IN EFI_HANDLE  Controller
+  IN EFI_HANDLE  Controller,
+  IN EFI_HANDLE  Image
   );
 
 /**
@@ -218,6 +246,44 @@ IScsiRemoveNic (
   );
 
 /**
+  Create and initialize the Attempts.
+
+  @param[in]  AttemptNum          The number of Attempts will be created.
+
+  @retval EFI_SUCCESS             The Attempts have been created successfully.
+  @retval Others                  Failed to create the Attempt.
+
+**/
+EFI_STATUS
+IScsiCreateAttempts (
+  IN UINTN  AttemptNum
+  );
+
+/**
+  Create the iSCSI configuration Keywords for each attempt.
+
+  @param[in]  KeywordNum          The number Sets of Keywords will be created.
+
+  @retval EFI_SUCCESS             The operation is completed.
+  @retval Others                  Failed to create the Keywords.
+
+**/
+EFI_STATUS
+IScsiCreateKeywords (
+  IN UINTN  KeywordNum
+  );
+
+/**
+
+  Free the attempt configure data variable.
+
+**/
+VOID
+IScsiCleanAttemptVariable (
+  IN   VOID
+  );
+
+/**
   Get the recorded NIC information from a global structure by the Index.
 
   @param[in]  NicIndex          The index indicates the position of NIC info.
@@ -227,12 +293,11 @@ IScsiRemoveNic (
 **/
 ISCSI_NIC_INFO *
 IScsiGetNicInfoByIndex (
-  IN UINT8      NicIndex
+  IN UINT8  NicIndex
   );
 
-
 /**
-  Get the NIC's PCI location and return it accroding to the composited
+  Get the NIC's PCI location and return it according to the composited
   format defined in iSCSI Boot Firmware Table.
 
   @param[in]   Controller        The handle of the controller.
@@ -266,9 +331,9 @@ IScsiGetNICPciLocation (
 **/
 VOID *
 IScsiGetVariableAndSize (
-  IN  CHAR16              *Name,
-  IN  EFI_GUID            *VendorGuid,
-  OUT UINTN               *VariableSize
+  IN  CHAR16    *Name,
+  IN  EFI_GUID  *VendorGuid,
+  OUT UINTN     *VariableSize
   );
 
 /**
@@ -290,10 +355,13 @@ IScsiCreateDriverData (
 /**
   Clean the iSCSI driver data.
 
-  @param[in]  Private The iSCSI driver data.
+  @param[in]              Private The iSCSI driver data.
+
+  @retval EFI_SUCCESS     The clean operation is successful.
+  @retval Others          Other errors as indicated.
 
 **/
-VOID
+EFI_STATUS
 IScsiCleanDriverData (
   IN ISCSI_DRIVER_DATA  *Private
   );
@@ -303,15 +371,29 @@ IScsiCleanDriverData (
 
   @param[in]  Controller           The handle of the controller.
   @param[in]  IpVersion            IP_VERSION_4 or IP_VERSION_6.
-  
+
   @retval TRUE                     The handle of the controller need the Dhcp protocol.
   @retval FALSE                    The handle of the controller does not need the Dhcp protocol.
-  
+
 **/
 BOOLEAN
 IScsiDhcpIsConfigured (
   IN EFI_HANDLE  Controller,
   IN UINT8       IpVersion
+  );
+
+/**
+  Check wheather the Controller handle is configured to use DNS protocol.
+
+  @param[in]  Controller           The handle of the controller.
+
+  @retval TRUE                     The handle of the controller need the DNS protocol.
+  @retval FALSE                    The handle of the controller does not need the DNS protocol.
+
+**/
+BOOLEAN
+IScsiDnsIsConfigured (
+  IN EFI_HANDLE  Controller
   );
 
 /**
@@ -340,7 +422,7 @@ IScsiGetConfigData (
 **/
 EFI_DEVICE_PATH_PROTOCOL *
 IScsiGetTcpConnDevicePath (
-  IN ISCSI_SESSION      *Session
+  IN ISCSI_SESSION  *Session
   );
 
 /**
@@ -362,9 +444,9 @@ IScsiOnExitBootService (
 
   This function tests whether the driver specified by DriverBindingHandle is
   currently managing the controller specified by ControllerHandle.  This test
-  is performed by evaluating if the the protocol specified by ProtocolGuid is
+  is performed by evaluating if the protocol specified by ProtocolGuid is
   present on ControllerHandle and is was opened by DriverBindingHandle and Nic
-  Device handle with an attribute of EFI_OPEN_PROTOCOL_BY_DRIVER. 
+  Device handle with an attribute of EFI_OPEN_PROTOCOL_BY_DRIVER.
   If ProtocolGuid is NULL, then ASSERT().
 
   @param  ControllerHandle     A handle for a controller to test.
@@ -383,8 +465,9 @@ IScsiOnExitBootService (
 EFI_STATUS
 EFIAPI
 IScsiTestManagedDevice (
-  IN  EFI_HANDLE       ControllerHandle,
-  IN  EFI_HANDLE       DriverBindingHandle,
-  IN  EFI_GUID         *ProtocolGuid
+  IN  EFI_HANDLE  ControllerHandle,
+  IN  EFI_HANDLE  DriverBindingHandle,
+  IN  EFI_GUID    *ProtocolGuid
   );
+
 #endif

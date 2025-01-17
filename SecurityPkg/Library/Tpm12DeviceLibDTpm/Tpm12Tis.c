@@ -1,14 +1,9 @@
 /** @file
   TIS (TPM Interface Specification) functions used by TPM1.2.
-  
-Copyright (c) 2013 - 2015, Intel Corporation. All rights reserved.<BR>
-This program and the accompanying materials 
-are licensed and made available under the terms and conditions of the BSD License 
-which accompanies this distribution.  The full text of the license may be found at 
-http://opensource.org/licenses/bsd-license.php
 
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS, 
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+Copyright (c) 2013 - 2018, Intel Corporation. All rights reserved.<BR>
+(C) Copyright 2015 Hewlett Packard Enterprise Development LP<BR>
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -22,169 +17,20 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 #include <Library/Tpm12CommandLib.h>
 #include <Library/PcdLib.h>
 
-//
-// Set structure alignment to 1-byte
-//
-#pragma pack (1)
+#include <IndustryStandard/TpmPtp.h>
+#include <IndustryStandard/TpmTis.h>
+
+typedef enum {
+  PtpInterfaceTis,
+  PtpInterfaceFifo,
+  PtpInterfaceCrb,
+  PtpInterfaceMax,
+} PTP_INTERFACE_TYPE;
 
 //
-// Register set map as specified in TIS specification Chapter 10
+// Max TPM command/response length
 //
-typedef struct {
-  ///
-  /// Used to gain ownership for this particular port.
-  ///
-  UINT8                             Access;             // 0
-  UINT8                             Reserved1[7];       // 1
-  ///
-  /// Controls interrupts.
-  ///
-  UINT32                            IntEnable;          // 8
-  ///
-  /// SIRQ vector to be used by the TPM.
-  ///
-  UINT8                             IntVector;          // 0ch
-  UINT8                             Reserved2[3];       // 0dh
-  ///
-  /// What caused interrupt.
-  ///
-  UINT32                            IntSts;             // 10h
-  ///
-  /// Shows which interrupts are supported by that particular TPM.
-  ///
-  UINT32                            IntfCapability;     // 14h
-  ///
-  /// Status Register. Provides status of the TPM.
-  ///
-  UINT8                             Status;             // 18h
-  ///
-  /// Number of consecutive writes that can be done to the TPM.
-  ///
-  UINT16                            BurstCount;         // 19h
-  UINT8                             Reserved3[9];
-  ///
-  /// Read or write FIFO, depending on transaction.
-  ///
-  UINT32                            DataFifo;           // 24h
-  UINT8                             Reserved4[0xed8];   // 28h
-  ///
-  /// Vendor ID
-  ///
-  UINT16                            Vid;                // 0f00h
-  ///
-  /// Device ID
-  ///
-  UINT16                            Did;                // 0f02h
-  ///
-  /// Revision ID
-  ///
-  UINT8                             Rid;                // 0f04h
-  ///
-  /// TCG defined configuration registers.
-  ///
-  UINT8                             TcgDefined[0x7b];   // 0f05h
-  ///
-  /// Alias to I/O legacy space.
-  ///
-  UINT32                            LegacyAddress1;     // 0f80h
-  ///
-  /// Additional 8 bits for I/O legacy space extension.
-  ///
-  UINT32                            LegacyAddress1Ex;   // 0f84h
-  ///
-  /// Alias to second I/O legacy space.
-  ///
-  UINT32                            LegacyAddress2;     // 0f88h
-  ///
-  /// Additional 8 bits for second I/O legacy space extension.
-  ///
-  UINT32                            LegacyAddress2Ex;   // 0f8ch
-  ///
-  /// Vendor-defined configuration registers.
-  ///
-  UINT8                             VendorDefined[0x70];// 0f90h
-} TIS_PC_REGISTERS;
-
-//
-// Restore original structure alignment
-//
-#pragma pack ()
-
-//
-// Define pointer types used to access TIS registers on PC
-//
-typedef TIS_PC_REGISTERS  *TIS_PC_REGISTERS_PTR;
-
-//
-// Define bits of ACCESS and STATUS registers
-//
-
-///
-/// This bit is a 1 to indicate that the other bits in this register are valid.
-///
-#define TIS_PC_VALID                BIT7
-///
-/// Indicate that this locality is active.
-///
-#define TIS_PC_ACC_ACTIVE           BIT5
-///
-/// Set to 1 to indicate that this locality had the TPM taken away while
-/// this locality had the TIS_PC_ACC_ACTIVE bit set.
-///
-#define TIS_PC_ACC_SEIZED           BIT4
-///
-/// Set to 1 to indicate that TPM MUST reset the
-/// TIS_PC_ACC_ACTIVE bit and remove ownership for localities less than the
-/// locality that is writing this bit.
-///
-#define TIS_PC_ACC_SEIZE            BIT3
-///
-/// When this bit is 1, another locality is requesting usage of the TPM.
-///
-#define TIS_PC_ACC_PENDIND          BIT2
-///
-/// Set to 1 to indicate that this locality is requesting to use TPM.
-///
-#define TIS_PC_ACC_RQUUSE           BIT1
-///
-/// A value of 1 indicates that a T/OS has not been established on the platform
-///
-#define TIS_PC_ACC_ESTABLISH        BIT0
-
-///
-/// When this bit is 1, TPM is in the Ready state, 
-/// indicating it is ready to receive a new command.
-///
-#define TIS_PC_STS_READY            BIT6
-///
-/// Write a 1 to this bit to cause the TPM to execute that command.
-///
-#define TIS_PC_STS_GO               BIT5
-///
-/// This bit indicates that the TPM has data available as a response.
-///
-#define TIS_PC_STS_DATA             BIT4
-///
-/// The TPM sets this bit to a value of 1 when it expects another byte of data for a command.
-///
-#define TIS_PC_STS_EXPECT           BIT3
-///
-/// Writes a 1 to this bit to force the TPM to re-send the response.
-///
-#define TIS_PC_STS_RETRY            BIT1
-
-//
-// Default TimeOut value
-//
-#define TIS_TIMEOUT_A               (750  * 1000)  // 750ms
-#define TIS_TIMEOUT_B               (2000 * 1000)  // 2s
-#define TIS_TIMEOUT_C               (750  * 1000)  // 750ms
-#define TIS_TIMEOUT_D               (750  * 1000)  // 750ms
-
-//
-// Max TPM command/reponse length
-//
-#define TPMCMDBUFLENGTH             1024
+#define TPMCMDBUFLENGTH  1024
 
 /**
   Check whether TPM chip exist.
@@ -196,13 +42,60 @@ typedef TIS_PC_REGISTERS  *TIS_PC_REGISTERS_PTR;
 **/
 BOOLEAN
 Tpm12TisPcPresenceCheck (
-  IN      TIS_PC_REGISTERS_PTR      TisReg
+  IN      TIS_PC_REGISTERS_PTR  TisReg
   )
 {
-  UINT8                             RegRead;
-  
+  UINT8  RegRead;
+
   RegRead = MmioRead8 ((UINTN)&TisReg->Access);
   return (BOOLEAN)(RegRead != (UINT8)-1);
+}
+
+/**
+  Return PTP interface type.
+
+  @param[in] Register                Pointer to PTP register.
+
+  @return PTP interface type.
+**/
+PTP_INTERFACE_TYPE
+Tpm12GetPtpInterface (
+  IN VOID  *Register
+  )
+{
+  PTP_CRB_INTERFACE_IDENTIFIER   InterfaceId;
+  PTP_FIFO_INTERFACE_CAPABILITY  InterfaceCapability;
+
+  if (!Tpm12TisPcPresenceCheck (Register)) {
+    return PtpInterfaceMax;
+  }
+
+  //
+  // Check interface id
+  //
+  InterfaceId.Uint32         = MmioRead32 ((UINTN)&((PTP_CRB_REGISTERS *)Register)->InterfaceId);
+  InterfaceCapability.Uint32 = MmioRead32 ((UINTN)&((PTP_FIFO_REGISTERS *)Register)->InterfaceCapability);
+
+  if ((InterfaceId.Bits.InterfaceType == PTP_INTERFACE_IDENTIFIER_INTERFACE_TYPE_CRB) &&
+      (InterfaceId.Bits.InterfaceVersion == PTP_INTERFACE_IDENTIFIER_INTERFACE_VERSION_CRB) &&
+      (InterfaceId.Bits.CapCRB != 0))
+  {
+    return PtpInterfaceCrb;
+  }
+
+  if ((InterfaceId.Bits.InterfaceType == PTP_INTERFACE_IDENTIFIER_INTERFACE_TYPE_FIFO) &&
+      (InterfaceId.Bits.InterfaceVersion == PTP_INTERFACE_IDENTIFIER_INTERFACE_VERSION_FIFO) &&
+      (InterfaceId.Bits.CapFIFO != 0) &&
+      (InterfaceCapability.Bits.InterfaceVersion == INTERFACE_CAPABILITY_INTERFACE_VERSION_PTP))
+  {
+    return PtpInterfaceFifo;
+  }
+
+  if (InterfaceId.Bits.InterfaceType == PTP_INTERFACE_IDENTIFIER_INTERFACE_TYPE_TIS) {
+    return PtpInterfaceTis;
+  }
+
+  return PtpInterfaceMax;
 }
 
 /**
@@ -218,30 +111,33 @@ Tpm12TisPcPresenceCheck (
 **/
 EFI_STATUS
 Tpm12TisPcWaitRegisterBits (
-  IN      UINT8                     *Register,
-  IN      UINT8                     BitSet,
-  IN      UINT8                     BitClear,
-  IN      UINT32                    TimeOut
+  IN      UINT8   *Register,
+  IN      UINT8   BitSet,
+  IN      UINT8   BitClear,
+  IN      UINT32  TimeOut
   )
 {
-  UINT8                             RegRead;
-  UINT32                            WaitTime;
+  UINT8   RegRead;
+  UINT32  WaitTime;
 
-  for (WaitTime = 0; WaitTime < TimeOut; WaitTime += 30){
+  for (WaitTime = 0; WaitTime < TimeOut; WaitTime += 30) {
     RegRead = MmioRead8 ((UINTN)Register);
-    if ((RegRead & BitSet) == BitSet && (RegRead & BitClear) == 0)
+    if (((RegRead & BitSet) == BitSet) && ((RegRead & BitClear) == 0)) {
       return EFI_SUCCESS;
+    }
+
     MicroSecondDelay (30);
   }
+
   return EFI_TIMEOUT;
 }
 
 /**
-  Get BurstCount by reading the burstCount field of a TIS regiger 
+  Get BurstCount by reading the burstCount field of a TIS register
   in the time of default TIS_TIMEOUT_D.
 
   @param[in]  TisReg                Pointer to TIS register.
-  @param[out] BurstCount            Pointer to a buffer to store the got BurstConut.
+  @param[out] BurstCount            Pointer to a buffer to store the got BurstCount.
 
   @retval     EFI_SUCCESS           Get BurstCount.
   @retval     EFI_INVALID_PARAMETER TisReg is NULL or BurstCount is NULL.
@@ -249,15 +145,15 @@ Tpm12TisPcWaitRegisterBits (
 **/
 EFI_STATUS
 Tpm12TisPcReadBurstCount (
-  IN      TIS_PC_REGISTERS_PTR      TisReg,
-     OUT  UINT16                    *BurstCount
+  IN      TIS_PC_REGISTERS_PTR  TisReg,
+  OUT  UINT16                   *BurstCount
   )
 {
-  UINT32                            WaitTime;
-  UINT8                             DataByte0;
-  UINT8                             DataByte1;
+  UINT32  WaitTime;
+  UINT8   DataByte0;
+  UINT8   DataByte1;
 
-  if (BurstCount == NULL || TisReg == NULL) {
+  if ((BurstCount == NULL) || (TisReg == NULL)) {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -273,6 +169,7 @@ Tpm12TisPcReadBurstCount (
     if (*BurstCount != 0) {
       return EFI_SUCCESS;
     }
+
     MicroSecondDelay (30);
     WaitTime += 30;
   } while (WaitTime < TIS_TIMEOUT_D);
@@ -281,7 +178,7 @@ Tpm12TisPcReadBurstCount (
 }
 
 /**
-  Set TPM chip to ready state by sending ready command TIS_PC_STS_READY 
+  Set TPM chip to ready state by sending ready command TIS_PC_STS_READY
   to Status Register in time.
 
   @param[in] TisReg                Pointer to TIS register.
@@ -292,16 +189,16 @@ Tpm12TisPcReadBurstCount (
 **/
 EFI_STATUS
 Tpm12TisPcPrepareCommand (
-  IN      TIS_PC_REGISTERS_PTR      TisReg
+  IN      TIS_PC_REGISTERS_PTR  TisReg
   )
 {
-  EFI_STATUS                        Status;
+  EFI_STATUS  Status;
 
   if (TisReg == NULL) {
     return EFI_INVALID_PARAMETER;
   }
 
-  MmioWrite8((UINTN)&TisReg->Status, TIS_PC_STS_READY);
+  MmioWrite8 ((UINTN)&TisReg->Status, TIS_PC_STS_READY);
   Status = Tpm12TisPcWaitRegisterBits (
              &TisReg->Status,
              TIS_PC_STS_READY,
@@ -312,7 +209,7 @@ Tpm12TisPcPrepareCommand (
 }
 
 /**
-  Get the control of TPM chip by sending requestUse command TIS_PC_ACC_RQUUSE 
+  Get the control of TPM chip by sending requestUse command TIS_PC_ACC_RQUUSE
   to ACCESS Register in the time of default TIS_TIMEOUT_A.
 
   @param[in] TisReg                Pointer to TIS register.
@@ -324,20 +221,20 @@ Tpm12TisPcPrepareCommand (
 **/
 EFI_STATUS
 Tpm12TisPcRequestUseTpm (
-  IN      TIS_PC_REGISTERS_PTR      TisReg
+  IN      TIS_PC_REGISTERS_PTR  TisReg
   )
 {
-  EFI_STATUS                        Status;
-  
+  EFI_STATUS  Status;
+
   if (TisReg == NULL) {
     return EFI_INVALID_PARAMETER;
   }
-  
+
   if (!Tpm12TisPcPresenceCheck (TisReg)) {
     return EFI_NOT_FOUND;
   }
 
-  MmioWrite8((UINTN)&TisReg->Access, TIS_PC_ACC_RQUUSE);
+  MmioWrite8 ((UINTN)&TisReg->Access, TIS_PC_ACC_RQUUSE);
   Status = Tpm12TisPcWaitRegisterBits (
              &TisReg->Access,
              (UINT8)(TIS_PC_ACC_ACTIVE |TIS_PC_VALID),
@@ -350,12 +247,12 @@ Tpm12TisPcRequestUseTpm (
 /**
   Send a command to TPM for execution and return response data.
 
-  @param[in]      TisReg        TPM register space base address.  
-  @param[in]      BufferIn      Buffer for command data.  
-  @param[in]      SizeIn        Size of command data.  
-  @param[in, out] BufferOut     Buffer for response data.  
-  @param[in, out] SizeOut       Size of response data.  
- 
+  @param[in]      TisReg        TPM register space base address.
+  @param[in]      BufferIn      Buffer for command data.
+  @param[in]      SizeIn        Size of command data.
+  @param[in, out] BufferOut     Buffer for response data.
+  @param[in, out] SizeOut       Size of response data.
+
   @retval EFI_SUCCESS           Operation completed successfully.
   @retval EFI_BUFFER_TOO_SMALL  Response data buffer is too small.
   @retval EFI_DEVICE_ERROR      Unexpected device behavior.
@@ -364,47 +261,52 @@ Tpm12TisPcRequestUseTpm (
 **/
 EFI_STATUS
 Tpm12TisTpmCommand (
-  IN     TIS_PC_REGISTERS_PTR       TisReg,
-  IN     UINT8                      *BufferIn,
-  IN     UINT32                     SizeIn,
-  IN OUT UINT8                      *BufferOut,
-  IN OUT UINT32                     *SizeOut
+  IN     TIS_PC_REGISTERS_PTR  TisReg,
+  IN     UINT8                 *BufferIn,
+  IN     UINT32                SizeIn,
+  IN OUT UINT8                 *BufferOut,
+  IN OUT UINT32                *SizeOut
   )
 {
-  EFI_STATUS                        Status;
-  UINT16                            BurstCount;
-  UINT32                            Index;
-  UINT32                            TpmOutSize;
-  UINT16                            Data16;
-  UINT32                            Data32;
+  EFI_STATUS  Status;
+  UINT16      BurstCount;
+  UINT32      Index;
+  UINT32      TpmOutSize;
+  UINT16      Data16;
+  UINT32      Data32;
+  UINT16      RspTag;
 
-  DEBUG_CODE (
-    UINTN  DebugSize;
+  DEBUG_CODE_BEGIN ();
+  UINTN  DebugSize;
 
-    DEBUG ((EFI_D_INFO, "Tpm12TisTpmCommand Send - "));
-    if (SizeIn > 0x100) {
-      DebugSize = 0x40;
-    } else {
-      DebugSize = SizeIn;
+  DEBUG ((DEBUG_VERBOSE, "Tpm12TisTpmCommand Send - "));
+  if (SizeIn > 0x100) {
+    DebugSize = 0x40;
+  } else {
+    DebugSize = SizeIn;
+  }
+
+  for (Index = 0; Index < DebugSize; Index++) {
+    DEBUG ((DEBUG_VERBOSE, "%02x ", BufferIn[Index]));
+  }
+
+  if (DebugSize != SizeIn) {
+    DEBUG ((DEBUG_VERBOSE, "...... "));
+    for (Index = SizeIn - 0x20; Index < SizeIn; Index++) {
+      DEBUG ((DEBUG_VERBOSE, "%02x ", BufferIn[Index]));
     }
-    for (Index = 0; Index < DebugSize; Index++) {
-      DEBUG ((EFI_D_INFO, "%02x ", BufferIn[Index]));
-    }
-    if (DebugSize != SizeIn) {
-      DEBUG ((EFI_D_INFO, "...... "));
-      for (Index = SizeIn - 0x20; Index < SizeIn; Index++) {
-        DEBUG ((EFI_D_INFO, "%02x ", BufferIn[Index]));
-      }
-    }
-    DEBUG ((EFI_D_INFO, "\n"));
-  );
+  }
+
+  DEBUG ((DEBUG_VERBOSE, "\n"));
+  DEBUG_CODE_END ();
   TpmOutSize = 0;
 
   Status = Tpm12TisPcPrepareCommand (TisReg);
-  if (EFI_ERROR (Status)){
+  if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "Tpm12 is not ready for command!\n"));
     return EFI_DEVICE_ERROR;
   }
+
   //
   // Send the command data to Tpm
   //
@@ -415,17 +317,19 @@ Tpm12TisTpmCommand (
       Status = EFI_DEVICE_ERROR;
       goto Exit;
     }
-    for (; BurstCount > 0 && Index < SizeIn; BurstCount--) {
-      MmioWrite8((UINTN)&TisReg->DataFifo, *(BufferIn + Index));
+
+    for ( ; BurstCount > 0 && Index < SizeIn; BurstCount--) {
+      MmioWrite8 ((UINTN)&TisReg->DataFifo, *(BufferIn + Index));
       Index++;
     }
   }
+
   //
   // Check the Tpm status STS_EXPECT change from 1 to 0
   //
   Status = Tpm12TisPcWaitRegisterBits (
              &TisReg->Status,
-             (UINT8) TIS_PC_VALID,
+             (UINT8)TIS_PC_VALID,
              TIS_PC_STS_EXPECT,
              TIS_TIMEOUT_C
              );
@@ -434,13 +338,14 @@ Tpm12TisTpmCommand (
     Status = EFI_BUFFER_TOO_SMALL;
     goto Exit;
   }
+
   //
   // Executed the TPM command and waiting for the response data ready
   //
-  MmioWrite8((UINTN)&TisReg->Status, TIS_PC_STS_GO);
+  MmioWrite8 ((UINTN)&TisReg->Status, TIS_PC_STS_GO);
   Status = Tpm12TisPcWaitRegisterBits (
              &TisReg->Status,
-             (UINT8) (TIS_PC_VALID | TIS_PC_STS_DATA),
+             (UINT8)(TIS_PC_VALID | TIS_PC_STS_DATA),
              0,
              TIS_TIMEOUT_B
              );
@@ -449,10 +354,11 @@ Tpm12TisTpmCommand (
     Status = EFI_DEVICE_ERROR;
     goto Exit;
   }
+
   //
   // Get response data header
   //
-  Index = 0;
+  Index      = 0;
   BurstCount = 0;
   while (Index < sizeof (TPM_RSP_COMMAND_HDR)) {
     Status = Tpm12TisPcReadBurstCount (TisReg, &BurstCount);
@@ -460,41 +366,48 @@ Tpm12TisTpmCommand (
       Status = EFI_DEVICE_ERROR;
       goto Exit;
     }
-    for (; BurstCount > 0; BurstCount--) {
+
+    for ( ; BurstCount > 0; BurstCount--) {
       *(BufferOut + Index) = MmioRead8 ((UINTN)&TisReg->DataFifo);
       Index++;
-      if (Index == sizeof (TPM_RSP_COMMAND_HDR)) break;
+      if (Index == sizeof (TPM_RSP_COMMAND_HDR)) {
+        break;
+      }
     }
   }
-  DEBUG_CODE (
-    DEBUG ((EFI_D_INFO, "Tpm12TisTpmCommand ReceiveHeader - "));
-    for (Index = 0; Index < sizeof (TPM_RSP_COMMAND_HDR); Index++) {
-      DEBUG ((EFI_D_INFO, "%02x ", BufferOut[Index]));
-    }
-    DEBUG ((EFI_D_INFO, "\n"));
-  );
+
+  DEBUG_CODE_BEGIN ();
+  DEBUG ((DEBUG_VERBOSE, "Tpm12TisTpmCommand ReceiveHeader - "));
+  for (Index = 0; Index < sizeof (TPM_RSP_COMMAND_HDR); Index++) {
+    DEBUG ((DEBUG_VERBOSE, "%02x ", BufferOut[Index]));
+  }
+
+  DEBUG ((DEBUG_VERBOSE, "\n"));
+  DEBUG_CODE_END ();
   //
-  // Check the reponse data header (tag,parasize and returncode )
+  // Check the response data header (tag, parasize and returncode)
   //
   CopyMem (&Data16, BufferOut, sizeof (UINT16));
-  if (SwapBytes16 (Data16) != TPM_TAG_RSP_COMMAND) {
-    DEBUG ((EFI_D_ERROR, "TPM12: TPM_ST_RSP error - %x\n", TPM_TAG_RSP_COMMAND));
+  RspTag = SwapBytes16 (Data16);
+  if ((RspTag != TPM_TAG_RSP_COMMAND) && (RspTag != TPM_TAG_RSP_AUTH1_COMMAND) && (RspTag != TPM_TAG_RSP_AUTH2_COMMAND)) {
+    DEBUG ((DEBUG_ERROR, "TPM12: Response tag error - current tag value is %x\n", RspTag));
     Status = EFI_UNSUPPORTED;
     goto Exit;
   }
 
   CopyMem (&Data32, (BufferOut + 2), sizeof (UINT32));
-  TpmOutSize  = SwapBytes32 (Data32);
+  TpmOutSize = SwapBytes32 (Data32);
   if (*SizeOut < TpmOutSize) {
     Status = EFI_BUFFER_TOO_SMALL;
     goto Exit;
   }
+
   *SizeOut = TpmOutSize;
   //
   // Continue reading the remaining data
   //
   while ( Index < TpmOutSize ) {
-    for (; BurstCount > 0; BurstCount--) {
+    for ( ; BurstCount > 0; BurstCount--) {
       *(BufferOut + Index) = MmioRead8 ((UINTN)&TisReg->DataFifo);
       Index++;
       if (Index == TpmOutSize) {
@@ -502,21 +415,24 @@ Tpm12TisTpmCommand (
         goto Exit;
       }
     }
+
     Status = Tpm12TisPcReadBurstCount (TisReg, &BurstCount);
     if (EFI_ERROR (Status)) {
       Status = EFI_DEVICE_ERROR;
       goto Exit;
     }
   }
+
 Exit:
-  DEBUG_CODE (
-    DEBUG ((EFI_D_INFO, "Tpm12TisTpmCommand Receive - "));
-    for (Index = 0; Index < TpmOutSize; Index++) {
-      DEBUG ((EFI_D_INFO, "%02x ", BufferOut[Index]));
-    }
-    DEBUG ((EFI_D_INFO, "\n"));
-  );
-  MmioWrite8((UINTN)&TisReg->Status, TIS_PC_STS_READY);
+  DEBUG_CODE_BEGIN ();
+  DEBUG ((DEBUG_VERBOSE, "Tpm12TisTpmCommand Receive - "));
+  for (Index = 0; Index < TpmOutSize; Index++) {
+    DEBUG ((DEBUG_VERBOSE, "%02x ", BufferOut[Index]));
+  }
+
+  DEBUG ((DEBUG_VERBOSE, "\n"));
+  DEBUG_CODE_END ();
+  MmioWrite8 ((UINTN)&TisReg->Status, TIS_PC_STS_READY);
   return Status;
 }
 
@@ -530,24 +446,101 @@ Exit:
 
   @retval EFI_SUCCESS            The command byte stream was successfully sent to the device and a response was successfully received.
   @retval EFI_DEVICE_ERROR       The command was not successfully sent to the device or a response was not successfully received from the device.
-  @retval EFI_BUFFER_TOO_SMALL   The output parameter block is too small. 
+  @retval EFI_BUFFER_TOO_SMALL   The output parameter block is too small.
 **/
 EFI_STATUS
 EFIAPI
 Tpm12SubmitCommand (
-  IN UINT32            InputParameterBlockSize,
-  IN UINT8             *InputParameterBlock,
-  IN OUT UINT32        *OutputParameterBlockSize,
-  IN UINT8             *OutputParameterBlock
+  IN UINT32      InputParameterBlockSize,
+  IN UINT8       *InputParameterBlock,
+  IN OUT UINT32  *OutputParameterBlockSize,
+  IN UINT8       *OutputParameterBlock
   )
 {
-  return Tpm12TisTpmCommand (
-           (TIS_PC_REGISTERS_PTR) (UINTN) PcdGet64 (PcdTpmBaseAddress),
-           InputParameterBlock,
-           InputParameterBlockSize,
-           OutputParameterBlock,
-           OutputParameterBlockSize
-           );
+  PTP_INTERFACE_TYPE  PtpInterface;
+
+  //
+  // Special handle for TPM1.2 to check PTP too, because PTP/TIS share same register address.
+  //
+  PtpInterface = Tpm12GetPtpInterface ((VOID *)(UINTN)PcdGet64 (PcdTpmBaseAddress));
+  switch (PtpInterface) {
+    case PtpInterfaceFifo:
+    case PtpInterfaceTis:
+      return Tpm12TisTpmCommand (
+               (TIS_PC_REGISTERS_PTR)(UINTN)PcdGet64 (PcdTpmBaseAddress),
+               InputParameterBlock,
+               InputParameterBlockSize,
+               OutputParameterBlock,
+               OutputParameterBlockSize
+               );
+    case PtpInterfaceCrb:
+    //
+    // No need to support CRB because it is only accept TPM2 command.
+    //
+    default:
+      return EFI_DEVICE_ERROR;
+  }
+}
+
+/**
+  Check whether the value of a TPM chip register satisfies the input BIT setting.
+
+  @param[in]  Register     Address port of register to be checked.
+  @param[in]  BitSet       Check these data bits are set.
+  @param[in]  BitClear     Check these data bits are clear.
+  @param[in]  TimeOut      The max wait time (unit MicroSecond) when checking register.
+
+  @retval     EFI_SUCCESS  The register satisfies the check bit.
+  @retval     EFI_TIMEOUT  The register can't run into the expected status in time.
+**/
+EFI_STATUS
+Tpm12PtpCrbWaitRegisterBits (
+  IN      UINT32  *Register,
+  IN      UINT32  BitSet,
+  IN      UINT32  BitClear,
+  IN      UINT32  TimeOut
+  )
+{
+  UINT32  RegRead;
+  UINT32  WaitTime;
+
+  for (WaitTime = 0; WaitTime < TimeOut; WaitTime += 30) {
+    RegRead = MmioRead32 ((UINTN)Register);
+    if (((RegRead & BitSet) == BitSet) && ((RegRead & BitClear) == 0)) {
+      return EFI_SUCCESS;
+    }
+
+    MicroSecondDelay (30);
+  }
+
+  return EFI_TIMEOUT;
+}
+
+/**
+  Get the control of TPM chip.
+
+  @param[in] CrbReg                Pointer to CRB register.
+
+  @retval    EFI_SUCCESS           Get the control of TPM chip.
+  @retval    EFI_INVALID_PARAMETER CrbReg is NULL.
+  @retval    EFI_NOT_FOUND         TPM chip doesn't exit.
+  @retval    EFI_TIMEOUT           Can't get the TPM control in time.
+**/
+EFI_STATUS
+Tpm12PtpCrbRequestUseTpm (
+  IN      PTP_CRB_REGISTERS_PTR  CrbReg
+  )
+{
+  EFI_STATUS  Status;
+
+  MmioWrite32 ((UINTN)&CrbReg->LocalityControl, PTP_CRB_LOCALITY_CONTROL_REQUEST_ACCESS);
+  Status = Tpm12PtpCrbWaitRegisterBits (
+             &CrbReg->LocalityStatus,
+             PTP_CRB_LOCALITY_STATUS_GRANTED,
+             0,
+             PTP_TIMEOUT_A
+             );
+  return Status;
 }
 
 /**
@@ -563,5 +556,20 @@ Tpm12RequestUseTpm (
   VOID
   )
 {
-  return Tpm12TisPcRequestUseTpm ((TIS_PC_REGISTERS_PTR) (UINTN) PcdGet64 (PcdTpmBaseAddress));
+  PTP_INTERFACE_TYPE  PtpInterface;
+
+  //
+  // Special handle for TPM1.2 to check PTP too, because PTP/TIS share same register address.
+  // Some other program might leverage this function to check the existence of TPM chip.
+  //
+  PtpInterface = Tpm12GetPtpInterface ((VOID *)(UINTN)PcdGet64 (PcdTpmBaseAddress));
+  switch (PtpInterface) {
+    case PtpInterfaceCrb:
+      return Tpm12PtpCrbRequestUseTpm ((PTP_CRB_REGISTERS_PTR)(UINTN)PcdGet64 (PcdTpmBaseAddress));
+    case PtpInterfaceFifo:
+    case PtpInterfaceTis:
+      return Tpm12TisPcRequestUseTpm ((TIS_PC_REGISTERS_PTR)(UINTN)PcdGet64 (PcdTpmBaseAddress));
+    default:
+      return EFI_NOT_FOUND;
+  }
 }

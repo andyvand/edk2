@@ -3,14 +3,8 @@
   this utility will print out the statistics information. You can use console
   redirection to capture the data.
 
-  Copyright (c) 2006 - 2015, Intel Corporation. All rights reserved.<BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  Copyright (c) 2006 - 2019, Intel Corporation. All rights reserved.<BR>
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -25,10 +19,11 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 
 #include <Guid/VariableFormat.h>
 #include <Guid/SmmVariableCommon.h>
-#include <Protocol/SmmCommunication.h>
+#include <Guid/PiSmmCommunicationRegionTable.h>
+#include <Protocol/MmCommunication2.h>
 #include <Protocol/SmmVariable.h>
 
-EFI_SMM_COMMUNICATION_PROTOCOL  *mSmmCommunication = NULL;
+EFI_MM_COMMUNICATION2_PROTOCOL  *mMmCommunication2 = NULL;
 
 /**
   This function get the variable statistics data from SMM variable driver.
@@ -46,20 +41,25 @@ EFI_SMM_COMMUNICATION_PROTOCOL  *mSmmCommunication = NULL;
 EFI_STATUS
 EFIAPI
 GetVariableStatisticsData (
-  IN OUT  EFI_SMM_COMMUNICATE_HEADER  *SmmCommunicateHeader,
-  IN OUT  UINTN                       *SmmCommunicateSize
+  IN OUT  EFI_MM_COMMUNICATE_HEADER  *SmmCommunicateHeader,
+  IN OUT  UINTN                      *SmmCommunicateSize
   )
 {
-  EFI_STATUS                          Status;
-  SMM_VARIABLE_COMMUNICATE_HEADER     *SmmVariableFunctionHeader;
+  EFI_STATUS                       Status;
+  SMM_VARIABLE_COMMUNICATE_HEADER  *SmmVariableFunctionHeader;
 
   CopyGuid (&SmmCommunicateHeader->HeaderGuid, &gEfiSmmVariableProtocolGuid);
-  SmmCommunicateHeader->MessageLength = *SmmCommunicateSize - OFFSET_OF (EFI_SMM_COMMUNICATE_HEADER, Data);
+  SmmCommunicateHeader->MessageLength = *SmmCommunicateSize - OFFSET_OF (EFI_MM_COMMUNICATE_HEADER, Data);
 
-  SmmVariableFunctionHeader = (SMM_VARIABLE_COMMUNICATE_HEADER *) &SmmCommunicateHeader->Data[0];
+  SmmVariableFunctionHeader           = (SMM_VARIABLE_COMMUNICATE_HEADER *)&SmmCommunicateHeader->Data[0];
   SmmVariableFunctionHeader->Function = SMM_VARIABLE_FUNCTION_GET_STATISTICS;
 
-  Status = mSmmCommunication->Communicate (mSmmCommunication, SmmCommunicateHeader, SmmCommunicateSize);
+  Status = mMmCommunication2->Communicate (
+                                mMmCommunication2,
+                                SmmCommunicateHeader,
+                                SmmCommunicateHeader,
+                                SmmCommunicateSize
+                                );
   ASSERT_EFI_ERROR (Status);
 
   Status = SmmVariableFunctionHeader->ReturnStatus;
@@ -79,101 +79,120 @@ PrintInfoFromSmm (
   VOID
   )
 {
-  EFI_STATUS                                     Status;
-  VARIABLE_INFO_ENTRY                            *VariableInfo;
-  EFI_SMM_COMMUNICATE_HEADER                     *CommBuffer;
-  UINTN                                          RealCommSize;
-  UINTN                                          CommSize;
-  SMM_VARIABLE_COMMUNICATE_HEADER                *FunctionHeader;
-  EFI_SMM_VARIABLE_PROTOCOL                      *Smmvariable;
+  EFI_STATUS                               Status;
+  VARIABLE_INFO_ENTRY                      *VariableInfo;
+  EFI_MM_COMMUNICATE_HEADER                *CommBuffer;
+  UINTN                                    RealCommSize;
+  UINTN                                    CommSize;
+  SMM_VARIABLE_COMMUNICATE_HEADER          *FunctionHeader;
+  EFI_SMM_VARIABLE_PROTOCOL                *Smmvariable;
+  EDKII_PI_SMM_COMMUNICATION_REGION_TABLE  *PiSmmCommunicationRegionTable;
+  UINT32                                   Index;
+  EFI_MEMORY_DESCRIPTOR                    *Entry;
+  UINTN                                    Size;
+  UINTN                                    MaxSize;
 
-  Status = gBS->LocateProtocol (&gEfiSmmVariableProtocolGuid, NULL, (VOID **) &Smmvariable);
+  Status = gBS->LocateProtocol (&gEfiSmmVariableProtocolGuid, NULL, (VOID **)&Smmvariable);
   if (EFI_ERROR (Status)) {
     return Status;
   }
 
-  Status = gBS->LocateProtocol (&gEfiSmmCommunicationProtocolGuid, NULL, (VOID **) &mSmmCommunication);
+  Status = gBS->LocateProtocol (&gEfiMmCommunication2ProtocolGuid, NULL, (VOID **)&mMmCommunication2);
   if (EFI_ERROR (Status)) {
     return Status;
   }
 
-  CommSize = SMM_COMMUNICATE_HEADER_SIZE + SMM_VARIABLE_COMMUNICATE_HEADER_SIZE;
-  RealCommSize = CommSize;
-  CommBuffer = AllocateZeroPool (CommSize);
+  CommBuffer   = NULL;
+  RealCommSize = 0;
+  Status       = EfiGetSystemConfigurationTable (
+                   &gEdkiiPiSmmCommunicationRegionTableGuid,
+                   (VOID **)&PiSmmCommunicationRegionTable
+                   );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  ASSERT (PiSmmCommunicationRegionTable != NULL);
+  Entry   = (EFI_MEMORY_DESCRIPTOR *)(PiSmmCommunicationRegionTable + 1);
+  Size    = 0;
+  MaxSize = 0;
+  for (Index = 0; Index < PiSmmCommunicationRegionTable->NumberOfEntries; Index++) {
+    if (Entry->Type == EfiConventionalMemory) {
+      Size = EFI_PAGES_TO_SIZE ((UINTN)Entry->NumberOfPages);
+      if (Size > (SMM_COMMUNICATE_HEADER_SIZE + SMM_VARIABLE_COMMUNICATE_HEADER_SIZE + sizeof (VARIABLE_INFO_ENTRY))) {
+        if (Size > MaxSize) {
+          MaxSize      = Size;
+          RealCommSize = MaxSize;
+          CommBuffer   = (EFI_MM_COMMUNICATE_HEADER *)(UINTN)Entry->PhysicalStart;
+        }
+      }
+    }
+
+    Entry = (EFI_MEMORY_DESCRIPTOR *)((UINT8 *)Entry + PiSmmCommunicationRegionTable->DescriptorSize);
+  }
+
   ASSERT (CommBuffer != NULL);
+  ZeroMem (CommBuffer, RealCommSize);
 
-  Print (L"Non-Volatile SMM Variables:\n");
+  Print (L"SMM Driver Non-Volatile Variables:\n");
   do {
-    Status = GetVariableStatisticsData (CommBuffer, &CommSize);
+    CommSize = RealCommSize;
+    Status   = GetVariableStatisticsData (CommBuffer, &CommSize);
     if (Status == EFI_BUFFER_TOO_SMALL) {
-      FreePool (CommBuffer);
-      CommBuffer = AllocateZeroPool (CommSize);
-      ASSERT (CommBuffer != NULL);
-      RealCommSize = CommSize;
-      Status = GetVariableStatisticsData (CommBuffer, &CommSize);
+      Print (L"The generic SMM communication buffer provided by SmmCommunicationRegionTable is too small\n");
+      return Status;
     }
 
     if (EFI_ERROR (Status) || (CommSize <= SMM_COMMUNICATE_HEADER_SIZE + SMM_VARIABLE_COMMUNICATE_HEADER_SIZE)) {
       break;
     }
 
-    if (CommSize < RealCommSize) {
-      CommSize = RealCommSize;
-    }
-
-    FunctionHeader = (SMM_VARIABLE_COMMUNICATE_HEADER *) CommBuffer->Data;
-    VariableInfo   = (VARIABLE_INFO_ENTRY *) FunctionHeader->Data;
+    FunctionHeader = (SMM_VARIABLE_COMMUNICATE_HEADER *)CommBuffer->Data;
+    VariableInfo   = (VARIABLE_INFO_ENTRY *)FunctionHeader->Data;
 
     if (!VariableInfo->Volatile) {
       Print (
-          L"%g R%03d(%03d) W%03d D%03d:%s\n",
-          &VariableInfo->VendorGuid,
-          VariableInfo->ReadCount,
-          VariableInfo->CacheCount,
-          VariableInfo->WriteCount,
-          VariableInfo->DeleteCount,
-          (CHAR16 *)(VariableInfo + 1)
-          );
+        L"%g R%03d(%03d) W%03d D%03d:%s\n",
+        &VariableInfo->VendorGuid,
+        VariableInfo->ReadCount,
+        VariableInfo->CacheCount,
+        VariableInfo->WriteCount,
+        VariableInfo->DeleteCount,
+        (CHAR16 *)(VariableInfo + 1)
+        );
     }
   } while (TRUE);
 
-  Print (L"Volatile SMM Variables:\n");
-  ZeroMem (CommBuffer, CommSize);
+  Print (L"SMM Driver Volatile Variables:\n");
+  ZeroMem (CommBuffer, RealCommSize);
   do {
-    Status = GetVariableStatisticsData (CommBuffer, &CommSize);
+    CommSize = RealCommSize;
+    Status   = GetVariableStatisticsData (CommBuffer, &CommSize);
     if (Status == EFI_BUFFER_TOO_SMALL) {
-      FreePool (CommBuffer);
-      CommBuffer = AllocateZeroPool (CommSize);
-      ASSERT (CommBuffer != NULL);
-      RealCommSize = CommSize;
-      Status = GetVariableStatisticsData (CommBuffer, &CommSize);
+      Print (L"The generic SMM communication buffer provided by SmmCommunicationRegionTable is too small\n");
+      return Status;
     }
 
     if (EFI_ERROR (Status) || (CommSize <= SMM_COMMUNICATE_HEADER_SIZE + SMM_VARIABLE_COMMUNICATE_HEADER_SIZE)) {
       break;
     }
 
-    if (CommSize < RealCommSize) {
-      CommSize = RealCommSize;
-    }
-
-    FunctionHeader = (SMM_VARIABLE_COMMUNICATE_HEADER *) CommBuffer->Data;
-    VariableInfo   = (VARIABLE_INFO_ENTRY *) FunctionHeader->Data;
+    FunctionHeader = (SMM_VARIABLE_COMMUNICATE_HEADER *)CommBuffer->Data;
+    VariableInfo   = (VARIABLE_INFO_ENTRY *)FunctionHeader->Data;
 
     if (VariableInfo->Volatile) {
       Print (
-          L"%g R%03d(%03d) W%03d D%03d:%s\n",
-          &VariableInfo->VendorGuid,
-          VariableInfo->ReadCount,
-          VariableInfo->CacheCount,
-          VariableInfo->WriteCount,
-          VariableInfo->DeleteCount,
-          (CHAR16 *)(VariableInfo + 1)
-          );
+        L"%g R%03d(%03d) W%03d D%03d:%s\n",
+        &VariableInfo->VendorGuid,
+        VariableInfo->ReadCount,
+        VariableInfo->CacheCount,
+        VariableInfo->WriteCount,
+        VariableInfo->DeleteCount,
+        (CHAR16 *)(VariableInfo + 1)
+        );
     }
   } while (TRUE);
 
-  FreePool (CommBuffer);
   return Status;
 }
 
@@ -196,24 +215,18 @@ UefiMain (
   IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
-  EFI_STATUS            Status;
-  VARIABLE_INFO_ENTRY   *VariableInfo;
-  VARIABLE_INFO_ENTRY   *Entry;
+  EFI_STATUS           RuntimeDxeStatus;
+  EFI_STATUS           SmmStatus;
+  VARIABLE_INFO_ENTRY  *VariableInfo;
+  VARIABLE_INFO_ENTRY  *Entry;
 
-  Status = EfiGetSystemConfigurationTable (&gEfiVariableGuid, (VOID **)&Entry);
-  if (EFI_ERROR (Status) || (Entry == NULL)) {
-    Status = EfiGetSystemConfigurationTable (&gEfiAuthenticatedVariableGuid, (VOID **)&Entry);
+  RuntimeDxeStatus = EfiGetSystemConfigurationTable (&gEfiVariableGuid, (VOID **)&Entry);
+  if (EFI_ERROR (RuntimeDxeStatus) || (Entry == NULL)) {
+    RuntimeDxeStatus = EfiGetSystemConfigurationTable (&gEfiAuthenticatedVariableGuid, (VOID **)&Entry);
   }
 
-  if (EFI_ERROR (Status) || (Entry == NULL)) {
-    Status = PrintInfoFromSmm ();
-    if (!EFI_ERROR (Status)) {
-      return Status;
-    }
-  }
-
-  if (!EFI_ERROR (Status) && (Entry != NULL)) {
-    Print (L"Non-Volatile EFI Variables:\n");
+  if (!EFI_ERROR (RuntimeDxeStatus) && (Entry != NULL)) {
+    Print (L"Runtime DXE Driver Non-Volatile EFI Variables:\n");
     VariableInfo = Entry;
     do {
       if (!VariableInfo->Volatile) {
@@ -231,7 +244,7 @@ UefiMain (
       VariableInfo = VariableInfo->Next;
     } while (VariableInfo != NULL);
 
-    Print (L"Volatile EFI Variables:\n");
+    Print (L"Runtime DXE Driver Volatile EFI Variables:\n");
     VariableInfo = Entry;
     do {
       if (VariableInfo->Volatile) {
@@ -245,16 +258,22 @@ UefiMain (
           VariableInfo->Name
           );
       }
+
       VariableInfo = VariableInfo->Next;
     } while (VariableInfo != NULL);
-
-  } else {
-    Print (L"Warning: Variable Dxe driver doesn't enable the feature of statistical information!\n");
-    Print (L"If you want to see this info, please:\n");
-    Print (L"  1. Set PcdVariableCollectStatistics as TRUE\n");
-    Print (L"  2. Rebuild Variable Dxe driver\n");
-    Print (L"  3. Run \"VariableInfo\" cmd again\n");
   }
 
-  return Status;
+  SmmStatus = PrintInfoFromSmm ();
+
+  if (EFI_ERROR (RuntimeDxeStatus) && EFI_ERROR (SmmStatus)) {
+    Print (L"Warning: Variable Dxe/Smm driver doesn't enable the feature of statistical information!\n");
+    Print (L"If you want to see this info, please:\n");
+    Print (L"  1. Set PcdVariableCollectStatistics as TRUE\n");
+    Print (L"  2. Rebuild Variable Dxe/Smm driver\n");
+    Print (L"  3. Run \"VariableInfo\" cmd again\n");
+
+    return EFI_NOT_FOUND;
+  }
+
+  return EFI_SUCCESS;
 }

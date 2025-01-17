@@ -1,31 +1,25 @@
 /** @file
   The driver binding and service binding protocol for IP6 driver.
 
-  Copyright (c) 2009 - 2012, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2009 - 2016, Intel Corporation. All rights reserved.<BR>
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php.
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #ifndef __EFI_IP6_DRIVER_H__
 #define __EFI_IP6_DRIVER_H__
 
-extern EFI_DRIVER_BINDING_PROTOCOL  gIp6DriverBinding;
-extern EFI_COMPONENT_NAME_PROTOCOL  gIp6ComponentName;
-extern EFI_COMPONENT_NAME2_PROTOCOL gIp6ComponentName2;
-extern EFI_UNICODE_STRING_TABLE     *gIp6ControllerNameTable;
+extern EFI_DRIVER_BINDING_PROTOCOL   gIp6DriverBinding;
+extern EFI_COMPONENT_NAME_PROTOCOL   gIp6ComponentName;
+extern EFI_COMPONENT_NAME2_PROTOCOL  gIp6ComponentName2;
+extern EFI_UNICODE_STRING_TABLE      *gIp6ControllerNameTable;
 
 typedef struct {
-  EFI_SERVICE_BINDING_PROTOCOL  *ServiceBinding;
-  UINTN                         NumberOfChildren;
-  EFI_HANDLE                    *ChildHandleBuffer;
-}IP6_DESTROY_CHILD_IN_HANDLE_BUF_CONTEXT;
+  EFI_SERVICE_BINDING_PROTOCOL    *ServiceBinding;
+  UINTN                           NumberOfChildren;
+  EFI_HANDLE                      *ChildHandleBuffer;
+} IP6_DESTROY_CHILD_IN_HANDLE_BUF_CONTEXT;
 
 /**
   Clean up an IP6 service binding instance. It releases all
@@ -42,7 +36,7 @@ typedef struct {
 **/
 EFI_STATUS
 Ip6CleanService (
-  IN IP6_SERVICE            *IpSb
+  IN IP6_SERVICE  *IpSb
   );
 
 //
@@ -67,12 +61,12 @@ Ip6CleanService (
 EFI_STATUS
 EFIAPI
 Ip6DriverEntryPoint (
-  IN EFI_HANDLE             ImageHandle,
-  IN EFI_SYSTEM_TABLE       *SystemTable
+  IN EFI_HANDLE        ImageHandle,
+  IN EFI_SYSTEM_TABLE  *SystemTable
   );
 
 //
-// Function prototypes for the Drivr Binding Protocol
+// Function prototypes for the Driver Binding Protocol
 //
 
 /**
@@ -104,7 +98,7 @@ Ip6DriverBindingSupported (
   @param[in]  RemainingDevicePath Optional parameter used to pick a specific child
                                   device to start.
 
-  @retval EFI_SUCCES              This driver is added to ControllerHandle.
+  @retval EFI_SUCCESS             This driver is added to ControllerHandle.
   @retval EFI_ALREADY_STARTED     This driver is already running on ControllerHandle.
   @retval other                   This driver does not support this device.
 
@@ -141,7 +135,7 @@ Ip6DriverBindingStop (
   );
 
 //
-// Function ptototypes for the ServiceBinding Prococol
+// Function prototypes for the ServiceBinding Protocol
 //
 
 /**
@@ -153,8 +147,8 @@ Ip6DriverBindingStop (
                                  is not NULL, then the I/O services are added to
                                  the existing child handle.
 
-  @retval EFI_SUCCES             The child handle was created with the I/O services.
-  @retval EFI_OUT_OF_RESOURCES   There are not enough resources availabe to create
+  @retval EFI_SUCCESS            The child handle was created with the I/O services.
+  @retval EFI_OUT_OF_RESOURCES   There are not enough resources available to create
                                  the child.
   @retval other                  The child handle was not created.
 
@@ -172,7 +166,7 @@ Ip6ServiceBindingCreateChild (
   @param[in]  This               Protocol instance pointer.
   @param[in]  ChildHandle        Handle of the child to destroy.
 
-  @retval EFI_SUCCES             The I/O services were removed from the child
+  @retval EFI_SUCCESS            The I/O services were removed from the child
                                  handle.
   @retval EFI_UNSUPPORTED        The child handle does not support the I/O services
                                   that are being removed.

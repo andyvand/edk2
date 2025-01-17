@@ -3,13 +3,7 @@
 
   (C) Copyright 2013 Hewlett-Packard Development Company, L.P.<BR>
   Copyright (c) 2005 - 2014, Intel Corporation. All rights reserved. <BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -27,9 +21,8 @@ CHAR16  *Title = NULL;
   @retval EFI_OUT_OF_RESOURCES  A memory allocation failed.
 **/
 EFI_STATUS
-EFIAPI
 MainTitleBarInit (
-  CONST CHAR16 *Prompt
+  CONST CHAR16  *Prompt
   )
 {
   SHELL_FREE_NON_NULL (Title);
@@ -41,6 +34,7 @@ MainTitleBarInit (
     //
     Title = CatSPrint (NULL, L"%s", Prompt);
   }
+
   if (Title == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
@@ -52,7 +46,6 @@ MainTitleBarInit (
   Clean up the memory used.
 **/
 VOID
-EFIAPI
 MainTitleBarCleanup (
   VOID
   )
@@ -62,13 +55,13 @@ MainTitleBarCleanup (
 }
 
 typedef struct {
-  UINT32  Foreground : 4;
-  UINT32  Background : 4;
+  UINT32    Foreground : 4;
+  UINT32    Background : 4;
 } TITLE_BAR_COLOR_ATTRIBUTES;
 
 typedef union {
-  TITLE_BAR_COLOR_ATTRIBUTES  Colors;
-  UINTN                       Data;
+  TITLE_BAR_COLOR_ATTRIBUTES    Colors;
+  UINTN                         Data;
 } TITLE_BAR_COLOR_UNION;
 
 /**
@@ -86,23 +79,21 @@ typedef union {
   @retval EFI_SUCCESS           The operation was successful.
 **/
 EFI_STATUS
-EFIAPI
 MainTitleBarRefresh (
-  IN CONST CHAR16                 *FileName OPTIONAL,
-  IN CONST EDIT_FILE_TYPE         FileType,
-  IN CONST BOOLEAN                ReadOnly,
-  IN CONST BOOLEAN                Modified,
-  IN CONST UINTN                  LastCol,
-  IN CONST UINTN                  LastRow,
-  IN CONST UINTN                  Offset,
-  IN CONST UINTN                  Size
+  IN CONST CHAR16          *FileName OPTIONAL,
+  IN CONST EDIT_FILE_TYPE  FileType,
+  IN CONST BOOLEAN         ReadOnly,
+  IN CONST BOOLEAN         Modified,
+  IN CONST UINTN           LastCol,
+  IN CONST UINTN           LastRow,
+  IN CONST UINTN           Offset,
+  IN CONST UINTN           Size
   )
 {
-  TITLE_BAR_COLOR_UNION   Orig;
-  TITLE_BAR_COLOR_UNION   New;
-  CONST CHAR16            *FileNameTmp;
-  INTN                    TempInteger;
-
+  TITLE_BAR_COLOR_UNION  Orig;
+  TITLE_BAR_COLOR_UNION  New;
+  CONST CHAR16           *FileNameTmp;
+  INTN                   TempInteger;
 
   //
   // backup the old screen attributes
@@ -130,10 +121,12 @@ MainTitleBarRefresh (
       Title
       );
   }
+
   if (FileName == NULL) {
     gST->ConOut->SetAttribute (gST->ConOut, Orig.Data);
     return EFI_SUCCESS;
   }
+
   //
   // First Extract the FileName from fullpath
   //
@@ -150,57 +143,62 @@ MainTitleBarRefresh (
   // the space for file name is 20 characters
   //
   if (StrLen (FileNameTmp) <= 20) {
-    ShellPrintEx (-1,-1, L"%s   ", FileNameTmp);
+    ShellPrintEx (-1, -1, L"%s   ", FileNameTmp);
     for (TempInteger = StrLen (FileNameTmp); TempInteger < 20; TempInteger++) {
-      ShellPrintEx (-1,-1, L" ");
+      ShellPrintEx (-1, -1, L" ");
     }
-
   } else {
     for (TempInteger = 0; TempInteger < 17; TempInteger++) {
-      ShellPrintEx (-1,-1, L"%c", FileNameTmp[TempInteger]);
+      ShellPrintEx (-1, -1, L"%c", FileNameTmp[TempInteger]);
     }
+
     //
     // print "..."
     //
-    ShellPrintEx (-1,-1, L"...   ");
+    ShellPrintEx (-1, -1, L"...   ");
   }
+
   //
   // print file type field
   //
-  switch (FileType){
+  switch (FileType) {
     case FileTypeAscii:
     case FileTypeUnicode:
-      if (FileType == FileTypeAscii){
-        ShellPrintEx (-1,-1, L"     ASCII     ");
+      if (FileType == FileTypeAscii) {
+        ShellPrintEx (-1, -1, L"     ASCII     ");
       } else {
-        ShellPrintEx (-1,-1, L"     UNICODE   ");
+        ShellPrintEx (-1, -1, L"     UNICODE   ");
       }
+
       //
       // print read-only field for text files
       //
       if (ReadOnly) {
-        ShellPrintEx (-1,-1, L"ReadOnly   ");
+        ShellPrintEx (-1, -1, L"ReadOnly   ");
       } else {
-        ShellPrintEx (-1,-1, L"           ");
+        ShellPrintEx (-1, -1, L"           ");
       }
-    break;
+
+      break;
     case FileTypeDiskBuffer:
     case FileTypeMemBuffer:
       //
       // Print the offset.
       //
-      ShellPrintEx (-1,-1, L"Offset %X | Size %X", Offset, Size);
+      ShellPrintEx (-1, -1, L"Offset %X | Size %X", Offset, Size);
     case FileTypeFileBuffer:
       break;
     default:
       break;
   }
+
   //
   // print modified field
   //
   if (Modified) {
-    ShellPrintEx (-1,-1, L"Modified");
+    ShellPrintEx (-1, -1, L"Modified");
   }
+
   //
   // restore the old attribute
   //

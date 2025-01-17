@@ -2,15 +2,9 @@
   Declaration of protocol interfaces in EFI_TCP4_PROTOCOL and EFI_TCP6_PROTOCOL.
   It is the common head file for all Tcp*.c in TCP driver.
 
-  Copyright (c) 2009 - 2012, Intel Corporation. All rights reserved.<BR>
-
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php.
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  Copyright (c) 2009 - 2016, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) Microsoft Corporation
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -19,6 +13,7 @@
 
 #include <Protocol/ServiceBinding.h>
 #include <Protocol/DriverBinding.h>
+#include <Protocol/Hash2.h>
 #include <Library/IpIoLib.h>
 #include <Library/DevicePathLib.h>
 #include <Library/PrintLib.h>
@@ -35,67 +30,59 @@ extern EFI_COMPONENT_NAME_PROTOCOL   gTcpComponentName;
 extern EFI_COMPONENT_NAME2_PROTOCOL  gTcpComponentName2;
 extern EFI_UNICODE_STRING_TABLE      *gTcpControllerNameTable;
 
-extern LIST_ENTRY                    mTcpRunQue;
-extern LIST_ENTRY                    mTcpListenQue;
-extern TCP_SEQNO                     mTcpGlobalIss;
-extern UINT32                        mTcpTick;
+extern LIST_ENTRY  mTcpRunQue;
+extern LIST_ENTRY  mTcpListenQue;
+extern TCP_SEQNO   mTcpGlobalSecret;
+extern UINT32      mTcpTick;
 
 ///
 /// 30 seconds.
 ///
-#define TCP6_KEEP_NEIGHBOR_TIME    30
+#define TCP6_KEEP_NEIGHBOR_TIME  30
 ///
 /// 5 seconds, since 1 tick equals 200ms.
 ///
-#define TCP6_REFRESH_NEIGHBOR_TICK 25
+#define TCP6_REFRESH_NEIGHBOR_TICK  25
 
-#define TCP_EXPIRE_TIME            65535
-
-///
-/// The implementation selects the initial send sequence number and the unit to
-/// be added when it is increased.
-///
-#define TCP_BASE_ISS               0x4d7e980b
-#define TCP_ISS_INCREMENT_1        2048
-#define TCP_ISS_INCREMENT_2        100
+#define TCP_EXPIRE_TIME  65535
 
 typedef union {
-  EFI_TCP4_CONFIG_DATA  Tcp4CfgData;
-  EFI_TCP6_CONFIG_DATA  Tcp6CfgData;
+  EFI_TCP4_CONFIG_DATA    Tcp4CfgData;
+  EFI_TCP6_CONFIG_DATA    Tcp6CfgData;
 } TCP_CONFIG_DATA;
 
 typedef union {
-  EFI_TCP4_ACCESS_POINT  Tcp4Ap;
-  EFI_TCP6_ACCESS_POINT  Tcp6Ap;
+  EFI_TCP4_ACCESS_POINT    Tcp4Ap;
+  EFI_TCP6_ACCESS_POINT    Tcp6Ap;
 } TCP_ACCESS_POINT;
 
 typedef struct _TCP4_MODE_DATA {
-  EFI_TCP4_CONNECTION_STATE       *Tcp4State;
-  EFI_TCP4_CONFIG_DATA            *Tcp4ConfigData;
-  EFI_IP4_MODE_DATA               *Ip4ModeData;
-  EFI_MANAGED_NETWORK_CONFIG_DATA *MnpConfigData;
-  EFI_SIMPLE_NETWORK_MODE         *SnpModeData;
+  EFI_TCP4_CONNECTION_STATE          *Tcp4State;
+  EFI_TCP4_CONFIG_DATA               *Tcp4ConfigData;
+  EFI_IP4_MODE_DATA                  *Ip4ModeData;
+  EFI_MANAGED_NETWORK_CONFIG_DATA    *MnpConfigData;
+  EFI_SIMPLE_NETWORK_MODE            *SnpModeData;
 } TCP4_MODE_DATA;
 
 typedef struct _TCP6_MODE_DATA {
-  EFI_TCP6_CONNECTION_STATE       *Tcp6State;
-  EFI_TCP6_CONFIG_DATA            *Tcp6ConfigData;
-  EFI_IP6_MODE_DATA               *Ip6ModeData;
-  EFI_MANAGED_NETWORK_CONFIG_DATA *MnpConfigData;
-  EFI_SIMPLE_NETWORK_MODE         *SnpModeData;
+  EFI_TCP6_CONNECTION_STATE          *Tcp6State;
+  EFI_TCP6_CONFIG_DATA               *Tcp6ConfigData;
+  EFI_IP6_MODE_DATA                  *Ip6ModeData;
+  EFI_MANAGED_NETWORK_CONFIG_DATA    *MnpConfigData;
+  EFI_SIMPLE_NETWORK_MODE            *SnpModeData;
 } TCP6_MODE_DATA;
 
 typedef struct _TCP4_ROUTE_INFO {
-  BOOLEAN           DeleteRoute;
-  EFI_IPv4_ADDRESS  *SubnetAddress;
-  EFI_IPv4_ADDRESS  *SubnetMask;
-  EFI_IPv4_ADDRESS  *GatewayAddress;
+  BOOLEAN             DeleteRoute;
+  EFI_IPv4_ADDRESS    *SubnetAddress;
+  EFI_IPv4_ADDRESS    *SubnetMask;
+  EFI_IPv4_ADDRESS    *GatewayAddress;
 } TCP4_ROUTE_INFO;
 
 typedef struct {
-  EFI_SERVICE_BINDING_PROTOCOL  *ServiceBinding;
-  UINTN                         NumberOfChildren;
-  EFI_HANDLE                    *ChildHandleBuffer;
+  EFI_SERVICE_BINDING_PROTOCOL    *ServiceBinding;
+  UINTN                           NumberOfChildren;
+  EFI_HANDLE                      *ChildHandleBuffer;
 } TCP_DESTROY_CHILD_IN_HANDLE_BUF_CONTEXT;
 
 //
@@ -128,12 +115,12 @@ typedef struct {
 EFI_STATUS
 EFIAPI
 Tcp4GetModeData (
-  IN   EFI_TCP4_PROTOCOL                  *This,
-  OUT  EFI_TCP4_CONNECTION_STATE          *Tcp4State      OPTIONAL,
-  OUT  EFI_TCP4_CONFIG_DATA               *Tcp4ConfigData OPTIONAL,
-  OUT  EFI_IP4_MODE_DATA                  *Ip4ModeData    OPTIONAL,
-  OUT  EFI_MANAGED_NETWORK_CONFIG_DATA    *MnpConfigData  OPTIONAL,
-  OUT  EFI_SIMPLE_NETWORK_MODE            *SnpModeData    OPTIONAL
+  IN   EFI_TCP4_PROTOCOL                *This,
+  OUT  EFI_TCP4_CONNECTION_STATE        *Tcp4State      OPTIONAL,
+  OUT  EFI_TCP4_CONFIG_DATA             *Tcp4ConfigData OPTIONAL,
+  OUT  EFI_IP4_MODE_DATA                *Ip4ModeData    OPTIONAL,
+  OUT  EFI_MANAGED_NETWORK_CONFIG_DATA  *MnpConfigData  OPTIONAL,
+  OUT  EFI_SIMPLE_NETWORK_MODE          *SnpModeData    OPTIONAL
   );
 
 /**
@@ -161,8 +148,8 @@ Tcp4GetModeData (
 EFI_STATUS
 EFIAPI
 Tcp4Configure (
-  IN EFI_TCP4_PROTOCOL        * This,
-  IN EFI_TCP4_CONFIG_DATA     * TcpConfigData OPTIONAL
+  IN EFI_TCP4_PROTOCOL     *This,
+  IN EFI_TCP4_CONFIG_DATA  *TcpConfigData OPTIONAL
   );
 
 /**
@@ -193,11 +180,11 @@ Tcp4Configure (
 EFI_STATUS
 EFIAPI
 Tcp4Routes (
-  IN EFI_TCP4_PROTOCOL           *This,
-  IN BOOLEAN                     DeleteRoute,
-  IN EFI_IPv4_ADDRESS            *SubnetAddress,
-  IN EFI_IPv4_ADDRESS            *SubnetMask,
-  IN EFI_IPv4_ADDRESS            *GatewayAddress
+  IN EFI_TCP4_PROTOCOL  *This,
+  IN BOOLEAN            DeleteRoute,
+  IN EFI_IPv4_ADDRESS   *SubnetAddress,
+  IN EFI_IPv4_ADDRESS   *SubnetMask,
+  IN EFI_IPv4_ADDRESS   *GatewayAddress
   );
 
 /**
@@ -222,8 +209,8 @@ Tcp4Routes (
 EFI_STATUS
 EFIAPI
 Tcp4Connect (
-  IN EFI_TCP4_PROTOCOL           *This,
-  IN EFI_TCP4_CONNECTION_TOKEN   *ConnectionToken
+  IN EFI_TCP4_PROTOCOL          *This,
+  IN EFI_TCP4_CONNECTION_TOKEN  *ConnectionToken
   );
 
 /**
@@ -236,7 +223,7 @@ Tcp4Connect (
   @retval EFI_SUCCESS              The listen token has been queued successfully.
   @retval EFI_NOT_STARTED          The EFI_TCP4_PROTOCOL instance hasn't been
                                    configured.
-  @retval EFI_ACCESS_DENIED        The instatnce is not a passive one or it is not
+  @retval EFI_ACCESS_DENIED        The instance is not a passive one or it is not
                                    in Tcp4StateListen state, or a same listen token
                                    has already existed in the listen token queue of
                                    this TCP instance.
@@ -249,8 +236,8 @@ Tcp4Connect (
 EFI_STATUS
 EFIAPI
 Tcp4Accept (
-  IN EFI_TCP4_PROTOCOL             *This,
-  IN EFI_TCP4_LISTEN_TOKEN         *ListenToken
+  IN EFI_TCP4_PROTOCOL      *This,
+  IN EFI_TCP4_LISTEN_TOKEN  *ListenToken
   );
 
 /**
@@ -285,8 +272,8 @@ Tcp4Accept (
 EFI_STATUS
 EFIAPI
 Tcp4Transmit (
-  IN EFI_TCP4_PROTOCOL            *This,
-  IN EFI_TCP4_IO_TOKEN            *Token
+  IN EFI_TCP4_PROTOCOL  *This,
+  IN EFI_TCP4_IO_TOKEN  *Token
   );
 
 /**
@@ -323,8 +310,8 @@ Tcp4Transmit (
 EFI_STATUS
 EFIAPI
 Tcp4Receive (
-  IN EFI_TCP4_PROTOCOL           *This,
-  IN EFI_TCP4_IO_TOKEN           *Token
+  IN EFI_TCP4_PROTOCOL  *This,
+  IN EFI_TCP4_IO_TOKEN  *Token
   );
 
 /**
@@ -352,28 +339,39 @@ Tcp4Receive (
 EFI_STATUS
 EFIAPI
 Tcp4Close (
-  IN EFI_TCP4_PROTOCOL           *This,
-  IN EFI_TCP4_CLOSE_TOKEN        *CloseToken
+  IN EFI_TCP4_PROTOCOL     *This,
+  IN EFI_TCP4_CLOSE_TOKEN  *CloseToken
   );
 
 /**
   Abort an asynchronous connection, listen, transmission or receive request.
 
-  @param[in]  This                 Pointer to the EFI_TCP4_PROTOCOL instance.
-  @param[in]  Token                Pointer to a token that has been issued by
-                                   Connect(), Accept(), Transmit() or Receive(). If
-                                   NULL, all pending tokens issued by the above four
-                                   functions will be aborted.
+  @param  This  The pointer to the EFI_TCP4_PROTOCOL instance.
+  @param  Token The pointer to a token that has been issued by
+                EFI_TCP4_PROTOCOL.Connect(),
+                EFI_TCP4_PROTOCOL.Accept(),
+                EFI_TCP4_PROTOCOL.Transmit() or
+                EFI_TCP4_PROTOCOL.Receive(). If NULL, all pending
+                tokens issued by above four functions will be aborted. Type
+                EFI_TCP4_COMPLETION_TOKEN is defined in
+                EFI_TCP4_PROTOCOL.Connect().
 
-  @retval EFI_UNSUPPORTED          The operation is not supported in the current
-                                   implementation.
+  @retval  EFI_SUCCESS             The asynchronous I/O request is aborted and Token->Event
+                                   is signaled.
+  @retval  EFI_INVALID_PARAMETER   This is NULL.
+  @retval  EFI_NOT_STARTED         This instance hasn't been configured.
+  @retval  EFI_NO_MAPPING          When using the default address, configuration
+                                   (DHCP, BOOTP,RARP, etc.) hasn't finished yet.
+  @retval  EFI_NOT_FOUND           The asynchronous I/O request isn't found in the
+                                   transmission or receive queue. It has either
+                                   completed or wasn't issued by Transmit() and Receive().
 
 **/
 EFI_STATUS
 EFIAPI
 Tcp4Cancel (
-  IN EFI_TCP4_PROTOCOL             *This,
-  IN EFI_TCP4_COMPLETION_TOKEN     *Token OPTIONAL
+  IN EFI_TCP4_PROTOCOL          *This,
+  IN EFI_TCP4_COMPLETION_TOKEN  *Token OPTIONAL
   );
 
 /**
@@ -393,7 +391,7 @@ Tcp4Cancel (
 EFI_STATUS
 EFIAPI
 Tcp4Poll (
-  IN EFI_TCP4_PROTOCOL        *This
+  IN EFI_TCP4_PROTOCOL  *This
   );
 
 //
@@ -431,12 +429,12 @@ Tcp4Poll (
 EFI_STATUS
 EFIAPI
 Tcp6GetModeData (
-  IN  EFI_TCP6_PROTOCOL                  *This,
-  OUT EFI_TCP6_CONNECTION_STATE          *Tcp6State      OPTIONAL,
-  OUT EFI_TCP6_CONFIG_DATA               *Tcp6ConfigData OPTIONAL,
-  OUT EFI_IP6_MODE_DATA                  *Ip6ModeData    OPTIONAL,
-  OUT EFI_MANAGED_NETWORK_CONFIG_DATA    *MnpConfigData  OPTIONAL,
-  OUT EFI_SIMPLE_NETWORK_MODE            *SnpModeData    OPTIONAL
+  IN  EFI_TCP6_PROTOCOL                *This,
+  OUT EFI_TCP6_CONNECTION_STATE        *Tcp6State      OPTIONAL,
+  OUT EFI_TCP6_CONFIG_DATA             *Tcp6ConfigData OPTIONAL,
+  OUT EFI_IP6_MODE_DATA                *Ip6ModeData    OPTIONAL,
+  OUT EFI_MANAGED_NETWORK_CONFIG_DATA  *MnpConfigData  OPTIONAL,
+  OUT EFI_SIMPLE_NETWORK_MODE          *SnpModeData    OPTIONAL
   );
 
 /**
@@ -489,8 +487,8 @@ Tcp6GetModeData (
 EFI_STATUS
 EFIAPI
 Tcp6Configure (
-  IN EFI_TCP6_PROTOCOL        *This,
-  IN EFI_TCP6_CONFIG_DATA     *Tcp6ConfigData OPTIONAL
+  IN EFI_TCP6_PROTOCOL     *This,
+  IN EFI_TCP6_CONFIG_DATA  *Tcp6ConfigData OPTIONAL
   );
 
 /**
@@ -526,8 +524,8 @@ Tcp6Configure (
 EFI_STATUS
 EFIAPI
 Tcp6Connect (
-  IN EFI_TCP6_PROTOCOL           *This,
-  IN EFI_TCP6_CONNECTION_TOKEN   *ConnectionToken
+  IN EFI_TCP6_PROTOCOL          *This,
+  IN EFI_TCP6_CONNECTION_TOKEN  *ConnectionToken
   );
 
 /**
@@ -560,7 +558,7 @@ Tcp6Connect (
   @retval EFI_INVALID_PARAMETER  One or more of the following are TRUE:
                                  - This is NULL.
                                  - ListenToken is NULL.
-                                 - ListentToken->CompletionToken.Event is NULL.
+                                 - ListenToken->CompletionToken.Event is NULL.
   @retval EFI_OUT_OF_RESOURCES   Could not allocate enough resources to finish the operation.
   @retval EFI_DEVICE_ERROR       Any unexpected error not belonging to the error
                                  categories given above.
@@ -569,8 +567,8 @@ Tcp6Connect (
 EFI_STATUS
 EFIAPI
 Tcp6Accept (
-  IN EFI_TCP6_PROTOCOL             *This,
-  IN EFI_TCP6_LISTEN_TOKEN         *ListenToken
+  IN EFI_TCP6_PROTOCOL      *This,
+  IN EFI_TCP6_LISTEN_TOKEN  *ListenToken
   );
 
 /**
@@ -613,8 +611,8 @@ Tcp6Accept (
 EFI_STATUS
 EFIAPI
 Tcp6Transmit (
-  IN EFI_TCP6_PROTOCOL            *This,
-  IN EFI_TCP6_IO_TOKEN            *Token
+  IN EFI_TCP6_PROTOCOL  *This,
+  IN EFI_TCP6_IO_TOKEN  *Token
   );
 
 /**
@@ -666,8 +664,8 @@ Tcp6Transmit (
 EFI_STATUS
 EFIAPI
 Tcp6Receive (
-  IN EFI_TCP6_PROTOCOL           *This,
-  IN EFI_TCP6_IO_TOKEN           *Token
+  IN EFI_TCP6_PROTOCOL  *This,
+  IN EFI_TCP6_IO_TOKEN  *Token
   );
 
 /**
@@ -700,8 +698,8 @@ Tcp6Receive (
 EFI_STATUS
 EFIAPI
 Tcp6Close (
-  IN EFI_TCP6_PROTOCOL           *This,
-  IN EFI_TCP6_CLOSE_TOKEN        *CloseToken
+  IN EFI_TCP6_PROTOCOL     *This,
+  IN EFI_TCP6_CLOSE_TOKEN  *CloseToken
   );
 
 /**
@@ -730,14 +728,20 @@ Tcp6Close (
                                  EFI_TCP6_COMPLETION_TOKEN is defined in
                                  EFI_TCP_PROTOCOL.Connect().
 
-  @retval EFI_UNSUPPORTED        The implementation does not support this function.
+  @retval EFI_SUCCESS            The asynchronous I/O request is aborted and Token->Event
+                                 is signaled.
+  @retval EFI_INVALID_PARAMETER  This is NULL.
+  @retval EFI_NOT_STARTED        This instance hasn't been configured.
+  @retval EFI_NOT_FOUND          The asynchronous I/O request isn't found in the transmission or
+                                 receive queue. It has either completed or wasn't issued by
+                                 Transmit() and Receive().
 
 **/
 EFI_STATUS
 EFIAPI
 Tcp6Cancel (
-  IN EFI_TCP6_PROTOCOL           *This,
-  IN EFI_TCP6_COMPLETION_TOKEN   *Token OPTIONAL
+  IN EFI_TCP6_PROTOCOL          *This,
+  IN EFI_TCP6_COMPLETION_TOKEN  *Token OPTIONAL
   );
 
 /**
@@ -760,7 +764,53 @@ Tcp6Cancel (
 EFI_STATUS
 EFIAPI
 Tcp6Poll (
-  IN EFI_TCP6_PROTOCOL        *This
+  IN EFI_TCP6_PROTOCOL  *This
+  );
+
+/**
+  Retrieves the Initial Sequence Number (ISN) for a TCP connection identified by local
+  and remote IP addresses and ports.
+
+  This method is based on https://datatracker.ietf.org/doc/html/rfc9293#section-3.4.1
+  Where the ISN is computed as follows:
+    ISN = TimeStamp + MD5(LocalIP, LocalPort, RemoteIP, RemotePort, Secret)
+
+  Otherwise:
+    ISN = M + F(localip, localport, remoteip, remoteport, secretkey)
+
+    "Here M is the 4 microsecond timer, and F() is a pseudorandom function (PRF) of the
+    connection's identifying parameters ("localip, localport, remoteip, remoteport")
+    and a secret key ("secretkey") (SHLD-1). F() MUST NOT be computable from the
+    outside (MUST-9), or an attacker could still guess at sequence numbers from the
+    ISN used for some other connection. The PRF could be implemented as a
+    cryptographic hash of the concatenation of the TCP connection parameters and some
+    secret data. For discussion of the selection of a specific hash algorithm and
+    management of the secret key data."
+
+  @param[in]       LocalIp        A pointer to the local IP address of the TCP connection.
+  @param[in]       LocalIpSize    The size, in bytes, of the LocalIp buffer.
+  @param[in]       LocalPort      The local port number of the TCP connection.
+  @param[in]       RemoteIp       A pointer to the remote IP address of the TCP connection.
+  @param[in]       RemoteIpSize   The size, in bytes, of the RemoteIp buffer.
+  @param[in]       RemotePort     The remote port number of the TCP connection.
+  @param[out]      Isn            A pointer to the variable that will receive the Initial
+                                  Sequence Number (ISN).
+
+  @retval EFI_SUCCESS             The operation completed successfully, and the ISN was
+                                  retrieved.
+  @retval EFI_INVALID_PARAMETER   One or more of the input parameters are invalid.
+  @retval EFI_UNSUPPORTED         The operation is not supported.
+
+**/
+EFI_STATUS
+TcpGetIsn (
+  IN UINT8       *LocalIp,
+  IN UINTN       LocalIpSize,
+  IN UINT16      LocalPort,
+  IN UINT8       *RemoteIp,
+  IN UINTN       RemoteIpSize,
+  IN UINT16      RemotePort,
+  OUT TCP_SEQNO  *Isn
   );
 
 #endif

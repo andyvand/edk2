@@ -1,20 +1,22 @@
 /** @file
   PCI emumeration support functions implementation for PCI Bus module.
 
-Copyright (c) 2006 - 2014, Intel Corporation. All rights reserved.<BR>
-This program and the accompanying materials
-are licensed and made available under the terms and conditions of the BSD License
-which accompanies this distribution.  The full text of the license may be found at
-http://opensource.org/licenses/bsd-license.php
-
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+Copyright (c) 2006 - 2021, Intel Corporation. All rights reserved.<BR>
+(C) Copyright 2015 Hewlett Packard Enterprise Development LP<BR>
+Copyright (C) 2023 Advanced Micro Devices, Inc. All rights reserved.<BR>
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #include "PciBus.h"
 
-extern CHAR16  *mBarTypeStr[];
+extern CHAR16                          *mBarTypeStr[];
+extern EDKII_DEVICE_SECURITY_PROTOCOL  *mDeviceSecurityProtocol;
+
+#define OLD_ALIGN    0xFFFFFFFFFFFFFFFFULL
+#define EVEN_ALIGN   0xFFFFFFFFFFFFFFFEULL
+#define SQUAD_ALIGN  0xFFFFFFFFFFFFFFFDULL
+#define DQUAD_ALIGN  0xFFFFFFFFFFFFFFFCULL
 
 /**
   This routine is used to check whether the pci device is present.
@@ -31,11 +33,11 @@ extern CHAR16  *mBarTypeStr[];
 **/
 EFI_STATUS
 PciDevicePresent (
-  IN  EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL     *PciRootBridgeIo,
-  OUT PCI_TYPE00                          *Pci,
-  IN  UINT8                               Bus,
-  IN  UINT8                               Device,
-  IN  UINT8                               Func
+  IN  EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL  *PciRootBridgeIo,
+  OUT PCI_TYPE00                       *Pci,
+  IN  UINT8                            Bus,
+  IN  UINT8                            Device,
+  IN  UINT8                            Func
   )
 {
   UINT64      Address;
@@ -57,7 +59,7 @@ PciDevicePresent (
                                   Pci
                                   );
 
-  if (!EFI_ERROR (Status) && (Pci->Hdr).VendorId != 0xffff) {
+  if (!EFI_ERROR (Status) && ((Pci->Hdr).VendorId != 0xffff)) {
     //
     // Read the entire config header for the device
     //
@@ -82,7 +84,7 @@ PciDevicePresent (
   root bridge will then be created.
 
   @param Bridge         Parent bridge instance.
-  @param StartBusNumber Bus number of begining.
+  @param StartBusNumber Bus number of beginning.
 
   @retval EFI_SUCCESS   PCI device is found.
   @retval other         Some error occurred when reading PCI bridge information.
@@ -90,41 +92,46 @@ PciDevicePresent (
 **/
 EFI_STATUS
 PciPciDeviceInfoCollector (
-  IN PCI_IO_DEVICE                      *Bridge,
-  IN UINT8                              StartBusNumber
+  IN PCI_IO_DEVICE  *Bridge,
+  IN UINT8          StartBusNumber
   )
 {
-  EFI_STATUS          Status;
-  PCI_TYPE00          Pci;
-  UINT8               Device;
-  UINT8               Func;
-  UINT8               SecBus;
-  PCI_IO_DEVICE       *PciIoDevice;
-  EFI_PCI_IO_PROTOCOL *PciIo;
+  EFI_STATUS           Status;
+  PCI_TYPE00           Pci;
+  UINT8                Device;
+  UINT8                Func;
+  UINT8                SecBus;
+  PCI_IO_DEVICE        *PciIoDevice;
+  EFI_PCI_IO_PROTOCOL  *PciIo;
 
-  Status  = EFI_SUCCESS;
-  SecBus  = 0;
+  Status = EFI_SUCCESS;
+  SecBus = 0;
 
   for (Device = 0; Device <= PCI_MAX_DEVICE; Device++) {
-
     for (Func = 0; Func <= PCI_MAX_FUNC; Func++) {
-
       //
       // Check to see whether PCI device is present
       //
       Status = PciDevicePresent (
                  Bridge->PciRootBridgeIo,
                  &Pci,
-                 (UINT8) StartBusNumber,
-                 (UINT8) Device,
-                 (UINT8) Func
+                 (UINT8)StartBusNumber,
+                 (UINT8)Device,
+                 (UINT8)Func
                  );
-      if (!EFI_ERROR (Status)) {
 
+      if (EFI_ERROR (Status) && (Func == 0)) {
+        //
+        // go to next device if there is no Function 0
+        //
+        break;
+      }
+
+      if (!EFI_ERROR (Status)) {
         //
         // Call back to host bridge function
         //
-        PreprocessController (Bridge, (UINT8) StartBusNumber, Device, Func, EfiPciBeforeResourceCollection);
+        PreprocessController (Bridge, (UINT8)StartBusNumber, Device, Func, EfiPciBeforeResourceCollection);
 
         //
         // Collect all the information about the PCI device discovered
@@ -132,7 +139,7 @@ PciPciDeviceInfoCollector (
         Status = PciSearchDevice (
                    Bridge,
                    &Pci,
-                   (UINT8) StartBusNumber,
+                   (UINT8)StartBusNumber,
                    Device,
                    Func,
                    &PciIoDevice
@@ -143,16 +150,23 @@ PciPciDeviceInfoCollector (
         //
         //
         if (!EFI_ERROR (Status) && (IS_PCI_BRIDGE (&Pci) || IS_CARDBUS_BRIDGE (&Pci))) {
-
           //
           // If it is PPB, we need to get the secondary bus to continue the enumeration
           //
-          PciIo   = &(PciIoDevice->PciIo);
+          PciIo = &(PciIoDevice->PciIo);
 
-          Status  = PciIo->Pci.Read (PciIo, EfiPciIoWidthUint8, PCI_BRIDGE_SECONDARY_BUS_REGISTER_OFFSET, 1, &SecBus);
+          Status = PciIo->Pci.Read (PciIo, EfiPciIoWidthUint8, PCI_BRIDGE_SECONDARY_BUS_REGISTER_OFFSET, 1, &SecBus);
 
           if (EFI_ERROR (Status)) {
             return Status;
+          }
+
+          //
+          // Ensure secondary bus number is greater than the primary bus number to avoid
+          // any potential dead loop when PcdPciDisableBusEnumeration is set to TRUE
+          //
+          if (SecBus <= StartBusNumber) {
+            break;
           }
 
           //
@@ -165,20 +179,17 @@ PciPciDeviceInfoCollector (
           //
           Status = PciPciDeviceInfoCollector (
                      PciIoDevice,
-                     (UINT8) (SecBus)
+                     (UINT8)(SecBus)
                      );
-
         }
 
-        if (Func == 0 && !IS_PCI_MULTI_FUNC (&Pci)) {
-
+        if ((Func == 0) && !IS_PCI_MULTI_FUNC (&Pci)) {
           //
           // Skip sub functions, this is not a multi function device
           //
           Func = PCI_MAX_FUNC;
         }
       }
-
     }
   }
 
@@ -186,7 +197,7 @@ PciPciDeviceInfoCollector (
 }
 
 /**
-  Seach required device and create PCI device instance.
+  Search required device and create PCI device instance.
 
   @param Bridge     Parent bridge instance.
   @param Pci        Input PCI device information block.
@@ -201,29 +212,34 @@ PciPciDeviceInfoCollector (
 **/
 EFI_STATUS
 PciSearchDevice (
-  IN  PCI_IO_DEVICE                         *Bridge,
-  IN  PCI_TYPE00                            *Pci,
-  IN  UINT8                                 Bus,
-  IN  UINT8                                 Device,
-  IN  UINT8                                 Func,
-  OUT PCI_IO_DEVICE                         **PciDevice
+  IN  PCI_IO_DEVICE  *Bridge,
+  IN  PCI_TYPE00     *Pci,
+  IN  UINT8          Bus,
+  IN  UINT8          Device,
+  IN  UINT8          Func,
+  OUT PCI_IO_DEVICE  **PciDevice
   )
 {
-  PCI_IO_DEVICE *PciIoDevice;
+  PCI_IO_DEVICE  *PciIoDevice;
+  BOOLEAN        IgnoreOptionRom;
 
-  PciIoDevice = NULL;
+  PciIoDevice     = NULL;
+  IgnoreOptionRom = FALSE;
 
   DEBUG ((
-    EFI_D_INFO,
-    "PciBus: Discovered %s @ [%02x|%02x|%02x]\n",
+    DEBUG_INFO,
+    "PciBus: Discovered %s @ [%02x|%02x|%02x]  [VID = 0x%x, DID = 0x%0x]\n",
     IS_PCI_BRIDGE (Pci) ?     L"PPB" :
     IS_CARDBUS_BRIDGE (Pci) ? L"P2C" :
-                              L"PCI",
-    Bus, Device, Func
+    L"PCI",
+    Bus,
+    Device,
+    Func,
+    Pci->Hdr.VendorId,
+    Pci->Hdr.DeviceId
     ));
 
   if (!IS_PCI_BRIDGE (Pci)) {
-
     if (IS_CARDBUS_BRIDGE (Pci)) {
       PciIoDevice = GatherP2CInfo (
                       Bridge,
@@ -236,7 +252,6 @@ PciSearchDevice (
         InitializeP2C (PciIoDevice);
       }
     } else {
-
       //
       // Create private data for Pci Device
       //
@@ -247,11 +262,8 @@ PciSearchDevice (
                       Device,
                       Func
                       );
-
     }
-
   } else {
-
     //
     // Create private data for PPB
     //
@@ -278,7 +290,7 @@ PciSearchDevice (
   //
   // Update the bar information for this PCI device so as to support some specific device
   //
-  UpdatePciInfo (PciIoDevice);
+  UpdatePciInfo (PciIoDevice, &IgnoreOptionRom);
 
   if (PciIoDevice->DevicePath == NULL) {
     return EFI_OUT_OF_RESOURCES;
@@ -288,15 +300,11 @@ PciSearchDevice (
   // Detect this function has option rom
   //
   if (gFullEnumeration) {
-
-    if (!IS_CARDBUS_BRIDGE (Pci)) {
-
+    if (!IS_CARDBUS_BRIDGE (Pci) && !IgnoreOptionRom) {
       GetOpRomInfo (PciIoDevice);
-
     }
 
     ResetPowerManagementFeature (PciIoDevice);
-
   }
 
   //
@@ -316,16 +324,90 @@ PciSearchDevice (
 }
 
 /**
+  Dump the PPB padding resource information.
+
+  @param PciIoDevice     PCI IO instance.
+  @param ResourceType    The desired resource type to dump.
+                         PciBarTypeUnknown means to dump all types of resources.
+**/
+VOID
+DumpPpbPaddingResource (
+  IN PCI_IO_DEVICE  *PciIoDevice,
+  IN PCI_BAR_TYPE   ResourceType
+  )
+{
+  EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR  *Descriptor;
+  PCI_BAR_TYPE                       Type;
+
+  if (PciIoDevice->ResourcePaddingDescriptors == NULL) {
+    return;
+  }
+
+  if ((ResourceType == PciBarTypeIo16) || (ResourceType == PciBarTypeIo32)) {
+    ResourceType = PciBarTypeIo;
+  }
+
+  for (Descriptor = PciIoDevice->ResourcePaddingDescriptors; Descriptor->Desc != ACPI_END_TAG_DESCRIPTOR; Descriptor++) {
+    Type = PciBarTypeUnknown;
+    if ((Descriptor->Desc == ACPI_ADDRESS_SPACE_DESCRIPTOR) && (Descriptor->ResType == ACPI_ADDRESS_SPACE_TYPE_IO)) {
+      Type = PciBarTypeIo;
+    } else if ((Descriptor->Desc == ACPI_ADDRESS_SPACE_DESCRIPTOR) && (Descriptor->ResType == ACPI_ADDRESS_SPACE_TYPE_MEM)) {
+      if (Descriptor->AddrSpaceGranularity == 32) {
+        //
+        // prefetchable
+        //
+        if (Descriptor->SpecificFlag == EFI_ACPI_MEMORY_RESOURCE_SPECIFIC_FLAG_CACHEABLE_PREFETCHABLE) {
+          Type = PciBarTypePMem32;
+        }
+
+        //
+        // Non-prefetchable
+        //
+        if (Descriptor->SpecificFlag == 0) {
+          Type = PciBarTypeMem32;
+        }
+      }
+
+      if (Descriptor->AddrSpaceGranularity == 64) {
+        //
+        // prefetchable
+        //
+        if (Descriptor->SpecificFlag == EFI_ACPI_MEMORY_RESOURCE_SPECIFIC_FLAG_CACHEABLE_PREFETCHABLE) {
+          Type = PciBarTypePMem64;
+        }
+
+        //
+        // Non-prefetchable
+        //
+        if (Descriptor->SpecificFlag == 0) {
+          Type = PciBarTypeMem64;
+        }
+      }
+    }
+
+    if ((Type != PciBarTypeUnknown) && ((ResourceType == PciBarTypeUnknown) || (ResourceType == Type))) {
+      DEBUG ((
+        DEBUG_INFO,
+        "   Padding: Type = %s; Alignment = 0x%lx;\tLength = 0x%lx\n",
+        mBarTypeStr[Type],
+        Descriptor->AddrRangeMax,
+        Descriptor->AddrLen
+        ));
+    }
+  }
+}
+
+/**
   Dump the PCI BAR information.
 
   @param PciIoDevice     PCI IO instance.
 **/
 VOID
 DumpPciBars (
-  IN PCI_IO_DEVICE                    *PciIoDevice
+  IN PCI_IO_DEVICE  *PciIoDevice
   )
 {
-  UINTN                               Index;
+  UINTN  Index;
 
   for (Index = 0; Index < PCI_MAX_BAR; Index++) {
     if (PciIoDevice->PciBar[Index].BarType == PciBarTypeUnknown) {
@@ -333,10 +415,13 @@ DumpPciBars (
     }
 
     DEBUG ((
-      EFI_D_INFO,
+      DEBUG_INFO,
       "   BAR[%d]: Type = %s; Alignment = 0x%lx;\tLength = 0x%lx;\tOffset = 0x%02x\n",
-      Index, mBarTypeStr[MIN (PciIoDevice->PciBar[Index].BarType, PciBarTypeMaxType)],
-      PciIoDevice->PciBar[Index].Alignment, PciIoDevice->PciBar[Index].Length, PciIoDevice->PciBar[Index].Offset
+      Index,
+      mBarTypeStr[MIN (PciIoDevice->PciBar[Index].BarType, PciBarTypeMaxType)],
+      PciIoDevice->PciBar[Index].Alignment,
+      PciIoDevice->PciBar[Index].Length,
+      PciIoDevice->PciBar[Index].Offset
       ));
   }
 
@@ -346,13 +431,17 @@ DumpPciBars (
     }
 
     DEBUG ((
-      EFI_D_INFO,
+      DEBUG_INFO,
       " VFBAR[%d]: Type = %s; Alignment = 0x%lx;\tLength = 0x%lx;\tOffset = 0x%02x\n",
-      Index, mBarTypeStr[MIN (PciIoDevice->VfPciBar[Index].BarType, PciBarTypeMaxType)],
-      PciIoDevice->VfPciBar[Index].Alignment, PciIoDevice->VfPciBar[Index].Length, PciIoDevice->VfPciBar[Index].Offset
+      Index,
+      mBarTypeStr[MIN (PciIoDevice->VfPciBar[Index].BarType, PciBarTypeMaxType)],
+      PciIoDevice->VfPciBar[Index].Alignment,
+      PciIoDevice->VfPciBar[Index].Length,
+      PciIoDevice->VfPciBar[Index].Offset
       ));
   }
-  DEBUG ((EFI_D_INFO, "\n"));
+
+  DEBUG ((DEBUG_INFO, "\n"));
 }
 
 /**
@@ -369,16 +458,16 @@ DumpPciBars (
 **/
 PCI_IO_DEVICE *
 GatherDeviceInfo (
-  IN PCI_IO_DEVICE                    *Bridge,
-  IN PCI_TYPE00                       *Pci,
-  IN UINT8                            Bus,
-  IN UINT8                            Device,
-  IN UINT8                            Func
+  IN PCI_IO_DEVICE  *Bridge,
+  IN PCI_TYPE00     *Pci,
+  IN UINT8          Bus,
+  IN UINT8          Device,
+  IN UINT8          Func
   )
 {
-  UINTN                           Offset;
-  UINTN                           BarIndex;
-  PCI_IO_DEVICE                   *PciIoDevice;
+  UINTN          Offset;
+  UINTN          BarIndex;
+  PCI_IO_DEVICE  *PciIoDevice;
 
   PciIoDevice = CreatePciIoDevice (
                   Bridge,
@@ -396,9 +485,7 @@ GatherDeviceInfo (
   // If it is a full enumeration, disconnect the device in advance
   //
   if (gFullEnumeration) {
-
     PCI_DISABLE_COMMAND_REGISTER (PciIoDevice, EFI_PCI_COMMAND_BITS_OWNED);
-
   }
 
   //
@@ -411,17 +498,19 @@ GatherDeviceInfo (
   //
   // Parse the SR-IOV VF bars
   //
-  if (PcdGetBool (PcdSrIovSupport) && PciIoDevice->SrIovCapabilityOffset != 0) {
+  if (PcdGetBool (PcdSrIovSupport) && (PciIoDevice->SrIovCapabilityOffset != 0)) {
     for (Offset = PciIoDevice->SrIovCapabilityOffset + EFI_PCIE_CAPABILITY_ID_SRIOV_BAR0, BarIndex = 0;
          Offset <= PciIoDevice->SrIovCapabilityOffset + EFI_PCIE_CAPABILITY_ID_SRIOV_BAR5;
-         BarIndex++) {
-
+         BarIndex++)
+    {
       ASSERT (BarIndex < PCI_MAX_BAR);
       Offset = PciIovParseVfBar (PciIoDevice, Offset, BarIndex);
     }
   }
 
-  DEBUG_CODE (DumpPciBars (PciIoDevice););
+  DEBUG_CODE (
+    DumpPciBars (PciIoDevice);
+    );
   return PciIoDevice;
 }
 
@@ -439,21 +528,21 @@ GatherDeviceInfo (
 **/
 PCI_IO_DEVICE *
 GatherPpbInfo (
-  IN PCI_IO_DEVICE                    *Bridge,
-  IN PCI_TYPE00                       *Pci,
-  IN UINT8                            Bus,
-  IN UINT8                            Device,
-  IN UINT8                            Func
+  IN PCI_IO_DEVICE  *Bridge,
+  IN PCI_TYPE00     *Pci,
+  IN UINT8          Bus,
+  IN UINT8          Device,
+  IN UINT8          Func
   )
 {
-  PCI_IO_DEVICE                   *PciIoDevice;
-  EFI_STATUS                      Status;
-  UINT8                           Value;
-  EFI_PCI_IO_PROTOCOL             *PciIo;
-  UINT8                           Temp;
-  UINT32                          PMemBaseLimit;
-  UINT16                          PrefetchableMemoryBase;
-  UINT16                          PrefetchableMemoryLimit;
+  PCI_IO_DEVICE        *PciIoDevice;
+  EFI_STATUS           Status;
+  UINT8                Value;
+  EFI_PCI_IO_PROTOCOL  *PciIo;
+  UINT8                Temp;
+  UINT32               PMemBaseLimit;
+  UINT16               PrefetchableMemoryBase;
+  UINT16               PrefetchableMemoryLimit;
 
   PciIoDevice = CreatePciIoDevice (
                   Bridge,
@@ -471,10 +560,9 @@ GatherPpbInfo (
     PCI_DISABLE_COMMAND_REGISTER (PciIoDevice, EFI_PCI_COMMAND_BITS_OWNED);
 
     //
-    // Initalize the bridge control register
+    // Initialize the bridge control register
     //
     PCI_DISABLE_BRIDGE_CONTROL_REGISTER (PciIoDevice, EFI_PCI_BRIDGE_CONTROL_BITS_OWNED);
-
   }
 
   //
@@ -507,14 +595,14 @@ GatherPpbInfo (
 
   //
   // if PcdPciBridgeIoAlignmentProbe is TRUE, PCI bus driver probes
-  // PCI bridge supporting non-stardard I/O window alignment less than 4K.
+  // PCI bridge supporting non-standard I/O window alignment less than 4K.
   //
 
   PciIoDevice->BridgeIoAlignment = 0xFFF;
   if (FeaturePcdGet (PcdPciBridgeIoAlignmentProbe)) {
     //
     // Check any bits of bit 3-1 of I/O Base Register are writable.
-    // if so, it is assumed non-stardard I/O window alignment is supported by this bridge.
+    // if so, it is assumed non-standard I/O window alignment is supported by this bridge.
     // Per spec, bit 3-1 of I/O Base Register are reserved bits, so its content can't be assumed.
     //
     Value = (UINT8)(Temp ^ (BIT3 | BIT2 | BIT1));
@@ -536,11 +624,11 @@ GatherPpbInfo (
   }
 
   Status = BarExisted (
-            PciIoDevice,
-            0x24,
-            NULL,
-            &PMemBaseLimit
-            );
+             PciIoDevice,
+             0x24,
+             NULL,
+             &PMemBaseLimit
+             );
 
   //
   // Test if it supports 64 memory or not
@@ -550,17 +638,18 @@ GatherPpbInfo (
   //   0 - the bridge supports only 32 bit addresses.
   //   1 - the bridge supports 64-bit addresses.
   //
-  PrefetchableMemoryBase = (UINT16)(PMemBaseLimit & 0xffff);
+  PrefetchableMemoryBase  = (UINT16)(PMemBaseLimit & 0xffff);
   PrefetchableMemoryLimit = (UINT16)(PMemBaseLimit >> 16);
   if (!EFI_ERROR (Status) &&
-      (PrefetchableMemoryBase & 0x000f) == 0x0001 &&
-      (PrefetchableMemoryLimit & 0x000f) == 0x0001) {
+      ((PrefetchableMemoryBase & 0x000f) == 0x0001) &&
+      ((PrefetchableMemoryLimit & 0x000f) == 0x0001))
+  {
     Status = BarExisted (
-              PciIoDevice,
-              0x28,
-              NULL,
-              NULL
-              );
+               PciIoDevice,
+               0x28,
+               NULL,
+               NULL
+               );
 
     if (!EFI_ERROR (Status)) {
       PciIoDevice->Decodes |= EFI_BRIDGE_PMEM32_DECODE_SUPPORTED;
@@ -577,11 +666,13 @@ GatherPpbInfo (
 
   GetResourcePaddingPpb (PciIoDevice);
 
-  DEBUG_CODE (DumpPciBars (PciIoDevice););
+  DEBUG_CODE (
+    DumpPpbPaddingResource (PciIoDevice, PciBarTypeUnknown);
+    DumpPciBars (PciIoDevice);
+    );
 
   return PciIoDevice;
 }
-
 
 /**
   Create PCI device instance for PCI Card bridge device.
@@ -597,14 +688,14 @@ GatherPpbInfo (
 **/
 PCI_IO_DEVICE *
 GatherP2CInfo (
-  IN PCI_IO_DEVICE                    *Bridge,
-  IN PCI_TYPE00                       *Pci,
-  IN UINT8                            Bus,
-  IN UINT8                            Device,
-  IN UINT8                            Func
+  IN PCI_IO_DEVICE  *Bridge,
+  IN PCI_TYPE00     *Pci,
+  IN UINT8          Bus,
+  IN UINT8          Device,
+  IN UINT8          Func
   )
 {
-  PCI_IO_DEVICE                   *PciIoDevice;
+  PCI_IO_DEVICE  *PciIoDevice;
 
   PciIoDevice = CreatePciIoDevice (
                   Bridge,
@@ -622,7 +713,7 @@ GatherP2CInfo (
     PCI_DISABLE_COMMAND_REGISTER (PciIoDevice, EFI_PCI_COMMAND_BITS_OWNED);
 
     //
-    // Initalize the bridge control register
+    // Initialize the bridge control register
     //
     PCI_DISABLE_BRIDGE_CONTROL_REGISTER (PciIoDevice, EFI_PCCARD_BRIDGE_CONTROL_BITS_OWNED);
   }
@@ -640,13 +731,15 @@ GatherP2CInfo (
                          EFI_BRIDGE_PMEM32_DECODE_SUPPORTED |
                          EFI_BRIDGE_IO32_DECODE_SUPPORTED;
 
-  DEBUG_CODE (DumpPciBars (PciIoDevice););
+  DEBUG_CODE (
+    DumpPciBars (PciIoDevice);
+    );
 
   return PciIoDevice;
 }
 
 /**
-  Create device path for pci deivce.
+  Create device path for pci device.
 
   @param ParentDevicePath  Parent bridge's path.
   @param PciIoDevice       Pci device instance.
@@ -656,18 +749,17 @@ GatherP2CInfo (
 **/
 EFI_DEVICE_PATH_PROTOCOL *
 CreatePciDevicePath (
-  IN  EFI_DEVICE_PATH_PROTOCOL *ParentDevicePath,
-  IN  PCI_IO_DEVICE            *PciIoDevice
+  IN  EFI_DEVICE_PATH_PROTOCOL  *ParentDevicePath,
+  IN  PCI_IO_DEVICE             *PciIoDevice
   )
 {
-
-  PCI_DEVICE_PATH PciNode;
+  PCI_DEVICE_PATH  PciNode;
 
   //
   // Create PCI device path
   //
-  PciNode.Header.Type     = HARDWARE_DEVICE_PATH;
-  PciNode.Header.SubType  = HW_PCI_DP;
+  PciNode.Header.Type    = HARDWARE_DEVICE_PATH;
+  PciNode.Header.SubType = HW_PCI_DP;
   SetDevicePathNodeLength (&PciNode.Header, sizeof (PciNode));
 
   PciNode.Device          = PciIoDevice->DeviceNumber;
@@ -691,16 +783,16 @@ CreatePciDevicePath (
 **/
 EFI_STATUS
 VfBarExisted (
-  IN PCI_IO_DEVICE *PciIoDevice,
-  IN UINTN         Offset,
-  OUT UINT32       *BarLengthValue,
-  OUT UINT32       *OriginalBarValue
+  IN PCI_IO_DEVICE  *PciIoDevice,
+  IN UINTN          Offset,
+  OUT UINT32        *BarLengthValue,
+  OUT UINT32        *OriginalBarValue
   )
 {
-  EFI_PCI_IO_PROTOCOL *PciIo;
-  UINT32              OriginalValue;
-  UINT32              Value;
-  EFI_TPL             OldTpl;
+  EFI_PCI_IO_PROTOCOL  *PciIo;
+  UINT32               OriginalValue;
+  UINT32               Value;
+  EFI_TPL              OldTpl;
 
   //
   // Ensure it is called properly
@@ -765,36 +857,36 @@ VfBarExisted (
 **/
 EFI_STATUS
 BarExisted (
-  IN  PCI_IO_DEVICE *PciIoDevice,
-  IN  UINTN         Offset,
-  OUT UINT32        *BarLengthValue,
-  OUT UINT32        *OriginalBarValue
+  IN  PCI_IO_DEVICE  *PciIoDevice,
+  IN  UINTN          Offset,
+  OUT UINT32         *BarLengthValue,
+  OUT UINT32         *OriginalBarValue
   )
 {
-  EFI_PCI_IO_PROTOCOL *PciIo;
-  UINT32              OriginalValue;
-  UINT32              Value;
-  EFI_TPL             OldTpl;
+  EFI_PCI_IO_PROTOCOL  *PciIo;
+  UINT32               OriginalValue;
+  UINT32               Value;
+  EFI_TPL              OldTpl;
 
   PciIo = &PciIoDevice->PciIo;
 
   //
   // Preserve the original value
   //
-  PciIo->Pci.Read (PciIo, EfiPciIoWidthUint32, (UINT8) Offset, 1, &OriginalValue);
+  PciIo->Pci.Read (PciIo, EfiPciIoWidthUint32, (UINT8)Offset, 1, &OriginalValue);
 
   //
   // Raise TPL to high level to disable timer interrupt while the BAR is probed
   //
   OldTpl = gBS->RaiseTPL (TPL_HIGH_LEVEL);
 
-  PciIo->Pci.Write (PciIo, EfiPciIoWidthUint32, (UINT8) Offset, 1, &gAllOne);
-  PciIo->Pci.Read (PciIo, EfiPciIoWidthUint32, (UINT8) Offset, 1, &Value);
+  PciIo->Pci.Write (PciIo, EfiPciIoWidthUint32, (UINT8)Offset, 1, &gAllOne);
+  PciIo->Pci.Read (PciIo, EfiPciIoWidthUint32, (UINT8)Offset, 1, &Value);
 
   //
   // Write back the original value
   //
-  PciIo->Pci.Write (PciIo, EfiPciIoWidthUint32, (UINT8) Offset, 1, &OriginalValue);
+  PciIo->Pci.Write (PciIo, EfiPciIoWidthUint32, (UINT8)Offset, 1, &OriginalValue);
 
   //
   // Restore TPL to its original level
@@ -822,7 +914,7 @@ BarExisted (
   @param PciIoDevice      Pci device instance.
   @param Command          Input command register value, and
                           returned supported register value.
-  @param BridgeControl    Inout bridge control value for PPB or P2C, and
+  @param BridgeControl    Input bridge control value for PPB or P2C, and
                           returned supported bridge control value.
   @param OldCommand       Returned and stored old command register offset.
   @param OldBridgeControl Returned and stored old Bridge control value for PPB or P2C.
@@ -830,14 +922,15 @@ BarExisted (
 **/
 VOID
 PciTestSupportedAttribute (
-  IN     PCI_IO_DEVICE                      *PciIoDevice,
-  IN OUT UINT16                             *Command,
-  IN OUT UINT16                             *BridgeControl,
-     OUT UINT16                             *OldCommand,
-     OUT UINT16                             *OldBridgeControl
+  IN     PCI_IO_DEVICE  *PciIoDevice,
+  IN OUT UINT16         *Command,
+  IN OUT UINT16         *BridgeControl,
+  OUT UINT16            *OldCommand,
+  OUT UINT16            *OldBridgeControl
   )
 {
-  EFI_TPL OldTpl;
+  EFI_TPL  OldTpl;
+  UINT16   CommandValue;
 
   //
   // Preserve the original value
@@ -847,11 +940,13 @@ PciTestSupportedAttribute (
   //
   // Raise TPL to high level to disable timer interrupt while the BAR is probed
   //
-  OldTpl = gBS->RaiseTPL (TPL_HIGH_LEVEL);
+  OldTpl       = gBS->RaiseTPL (TPL_HIGH_LEVEL);
+  CommandValue = *Command | *OldCommand;
 
-  PCI_SET_COMMAND_REGISTER (PciIoDevice, *Command);
-  PCI_READ_COMMAND_REGISTER (PciIoDevice, Command);
+  PCI_SET_COMMAND_REGISTER (PciIoDevice, CommandValue);
+  PCI_READ_COMMAND_REGISTER (PciIoDevice, &CommandValue);
 
+  *Command = *Command & CommandValue;
   //
   // Write back the original value
   //
@@ -863,7 +958,6 @@ PciTestSupportedAttribute (
   gBS->RestoreTPL (OldTpl);
 
   if (IS_PCI_BRIDGE (&PciIoDevice->Pci) || IS_CARDBUS_BRIDGE (&PciIoDevice->Pci)) {
-
     //
     // Preserve the original value
     //
@@ -886,7 +980,6 @@ PciTestSupportedAttribute (
     // Restore TPL to its original level
     //
     gBS->RestoreTPL (OldTpl);
-
   } else {
     *OldBridgeControl = 0;
     *BridgeControl    = 0;
@@ -904,10 +997,10 @@ PciTestSupportedAttribute (
 **/
 VOID
 PciSetDeviceAttribute (
-  IN PCI_IO_DEVICE                      *PciIoDevice,
-  IN UINT16                             Command,
-  IN UINT16                             BridgeControl,
-  IN UINTN                              Option
+  IN PCI_IO_DEVICE  *PciIoDevice,
+  IN UINT16         Command,
+  IN UINT16         BridgeControl,
+  IN UINTN          Option
   )
 {
   UINT64  Attributes;
@@ -946,18 +1039,17 @@ PciSetDeviceAttribute (
   }
 
   if (Option == EFI_SET_SUPPORTS) {
-
-    Attributes |= (UINT64) (EFI_PCI_IO_ATTRIBUTE_MEMORY_WRITE_COMBINE |
-                  EFI_PCI_IO_ATTRIBUTE_MEMORY_CACHED        |
-                  EFI_PCI_IO_ATTRIBUTE_MEMORY_DISABLE       |
-                  EFI_PCI_IO_ATTRIBUTE_EMBEDDED_DEVICE      |
-                  EFI_PCI_IO_ATTRIBUTE_EMBEDDED_ROM         |
-                  EFI_PCI_IO_ATTRIBUTE_DUAL_ADDRESS_CYCLE);
+    Attributes |= (UINT64)(EFI_PCI_IO_ATTRIBUTE_MEMORY_WRITE_COMBINE |
+                           EFI_PCI_IO_ATTRIBUTE_MEMORY_CACHED        |
+                           EFI_PCI_IO_ATTRIBUTE_MEMORY_DISABLE       |
+                           EFI_PCI_IO_ATTRIBUTE_EMBEDDED_DEVICE      |
+                           EFI_PCI_IO_ATTRIBUTE_EMBEDDED_ROM         |
+                           EFI_PCI_IO_ATTRIBUTE_DUAL_ADDRESS_CYCLE);
 
     if (IS_PCI_LPC (&PciIoDevice->Pci)) {
-        Attributes |= EFI_PCI_IO_ATTRIBUTE_ISA_MOTHERBOARD_IO;
-        Attributes |= (mReserveIsaAliases ? (UINT64) EFI_PCI_IO_ATTRIBUTE_ISA_IO : \
-                                            (UINT64) EFI_PCI_IO_ATTRIBUTE_ISA_IO_16);
+      Attributes |= EFI_PCI_IO_ATTRIBUTE_ISA_MOTHERBOARD_IO;
+      Attributes |= (mReserveIsaAliases ? (UINT64)EFI_PCI_IO_ATTRIBUTE_ISA_IO : \
+                     (UINT64)EFI_PCI_IO_ATTRIBUTE_ISA_IO_16);
     }
 
     if (IS_PCI_BRIDGE (&PciIoDevice->Pci) || IS_CARDBUS_BRIDGE (&PciIoDevice->Pci)) {
@@ -975,7 +1067,6 @@ PciSetDeviceAttribute (
                                 EFI_PCI_IO_ATTRIBUTE_VGA_PALETTE_IO);
       }
     } else {
-
       if (IS_PCI_IDE (&PciIoDevice->Pci)) {
         Attributes |= EFI_PCI_IO_ATTRIBUTE_IDE_SECONDARY_IO;
         Attributes |= EFI_PCI_IO_ATTRIBUTE_IDE_PRIMARY_IO;
@@ -983,16 +1074,15 @@ PciSetDeviceAttribute (
 
       if (IS_PCI_VGA (&PciIoDevice->Pci)) {
         Attributes |= EFI_PCI_IO_ATTRIBUTE_VGA_MEMORY;
-        Attributes |= (mReserveVgaAliases ? (UINT64) EFI_PCI_IO_ATTRIBUTE_VGA_IO : \
-                                            (UINT64) EFI_PCI_IO_ATTRIBUTE_VGA_IO_16);
+        Attributes |= (mReserveVgaAliases ? (UINT64)EFI_PCI_IO_ATTRIBUTE_VGA_IO : \
+                       (UINT64)EFI_PCI_IO_ATTRIBUTE_VGA_IO_16);
       }
     }
 
-    PciIoDevice->Supports = Attributes;
-    PciIoDevice->Supports &= ( (PciIoDevice->Parent->Supports) | \
-                               EFI_PCI_IO_ATTRIBUTE_IO | EFI_PCI_IO_ATTRIBUTE_MEMORY | \
-                               EFI_PCI_IO_ATTRIBUTE_BUS_MASTER );
-
+    PciIoDevice->Supports  = Attributes;
+    PciIoDevice->Supports &= ((PciIoDevice->Parent->Supports) | \
+                              EFI_PCI_IO_ATTRIBUTE_IO | EFI_PCI_IO_ATTRIBUTE_MEMORY | \
+                              EFI_PCI_IO_ATTRIBUTE_BUS_MASTER);
   } else {
     //
     // When this attribute is clear, the RomImage and RomSize fields in the PCI IO were
@@ -1003,6 +1093,7 @@ PciSetDeviceAttribute (
     if (!PciIoDevice->EmbeddedRom) {
       Attributes |= EFI_PCI_IO_ATTRIBUTE_EMBEDDED_ROM;
     }
+
     PciIoDevice->Attributes = Attributes;
   }
 }
@@ -1019,19 +1110,19 @@ PciSetDeviceAttribute (
 **/
 EFI_STATUS
 GetFastBackToBackSupport (
-  IN PCI_IO_DEVICE                      *PciIoDevice,
-  IN UINT8                              StatusIndex
+  IN PCI_IO_DEVICE  *PciIoDevice,
+  IN UINT8          StatusIndex
   )
 {
-  EFI_PCI_IO_PROTOCOL *PciIo;
-  EFI_STATUS          Status;
-  UINT32              StatusRegister;
+  EFI_PCI_IO_PROTOCOL  *PciIo;
+  EFI_STATUS           Status;
+  UINT32               StatusRegister;
 
   //
   // Read the status register
   //
-  PciIo   = &PciIoDevice->PciIo;
-  Status  = PciIo->Pci.Read (PciIo, EfiPciIoWidthUint16, StatusIndex, 1, &StatusRegister);
+  PciIo  = &PciIoDevice->PciIo;
+  Status = PciIo->Pci.Read (PciIo, EfiPciIoWidthUint16, StatusIndex, 1, &StatusRegister);
   if (EFI_ERROR (Status)) {
     return EFI_UNSUPPORTED;
   }
@@ -1055,30 +1146,24 @@ GetFastBackToBackSupport (
 **/
 VOID
 ProcessOptionRomLight (
-  IN PCI_IO_DEVICE                      *PciIoDevice
+  IN PCI_IO_DEVICE  *PciIoDevice
   )
 {
-  PCI_IO_DEVICE   *Temp;
-  LIST_ENTRY      *CurrentLink;
+  PCI_IO_DEVICE  *Temp;
+  LIST_ENTRY     *CurrentLink;
 
   //
   // For RootBridge, PPB , P2C, go recursively to traverse all its children
   //
   CurrentLink = PciIoDevice->ChildList.ForwardLink;
   while (CurrentLink != NULL && CurrentLink != &PciIoDevice->ChildList) {
-
     Temp = PCI_IO_DEVICE_FROM_LINK (CurrentLink);
 
     if (!IsListEmpty (&Temp->ChildList)) {
       ProcessOptionRomLight (Temp);
     }
 
-    PciRomGetImageMapping (Temp);
-
-    //
-    // The OpRom has already been processed in the first round
-    //
-    Temp->AllOpRomProcessed = TRUE;
+    Temp->AllOpRomProcessed = PciRomGetImageMapping (Temp);
 
     CurrentLink = CurrentLink->ForwardLink;
   }
@@ -1092,40 +1177,39 @@ ProcessOptionRomLight (
 **/
 EFI_STATUS
 DetermineDeviceAttribute (
-  IN PCI_IO_DEVICE                      *PciIoDevice
+  IN PCI_IO_DEVICE  *PciIoDevice
   )
 {
-  UINT16          Command;
-  UINT16          BridgeControl;
-  UINT16          OldCommand;
-  UINT16          OldBridgeControl;
-  BOOLEAN         FastB2BSupport;
-  PCI_IO_DEVICE   *Temp;
-  LIST_ENTRY      *CurrentLink;
-  EFI_STATUS      Status;
+  UINT16         Command;
+  UINT16         BridgeControl;
+  UINT16         OldCommand;
+  UINT16         OldBridgeControl;
+  BOOLEAN        FastB2BSupport;
+  PCI_IO_DEVICE  *Temp;
+  LIST_ENTRY     *CurrentLink;
+  EFI_STATUS     Status;
 
   //
-  // For Root Bridge, just copy it by RootBridgeIo proctocol
+  // For Root Bridge, just copy it by RootBridgeIo protocol
   // so as to keep consistent with the actual attribute
   //
   if (PciIoDevice->Parent == NULL) {
     Status = PciIoDevice->PciRootBridgeIo->GetAttributes (
-                                            PciIoDevice->PciRootBridgeIo,
-                                            &PciIoDevice->Supports,
-                                            &PciIoDevice->Attributes
-                                            );
+                                             PciIoDevice->PciRootBridgeIo,
+                                             &PciIoDevice->Supports,
+                                             &PciIoDevice->Attributes
+                                             );
     if (EFI_ERROR (Status)) {
       return Status;
     }
+
     //
     // Assume the PCI Root Bridge supports DAC
     //
     PciIoDevice->Supports |= (UINT64)(EFI_PCI_IO_ATTRIBUTE_EMBEDDED_DEVICE |
-                              EFI_PCI_IO_ATTRIBUTE_EMBEDDED_ROM |
-                              EFI_PCI_IO_ATTRIBUTE_DUAL_ADDRESS_CYCLE);
-
+                                      EFI_PCI_IO_ATTRIBUTE_EMBEDDED_ROM |
+                                      EFI_PCI_IO_ATTRIBUTE_DUAL_ADDRESS_CYCLE);
   } else {
-
     //
     // Set the attributes to be checked for common PCI devices and PPB or P2C
     // Since some devices only support part of them, it is better to set the
@@ -1154,9 +1238,11 @@ DetermineDeviceAttribute (
     PciSetDeviceAttribute (PciIoDevice, OldCommand, OldBridgeControl, EFI_SET_ATTRIBUTES);
 
     //
-    // Enable other supported attributes but not defined in PCI_IO_PROTOCOL
-    //
-    PCI_ENABLE_COMMAND_REGISTER (PciIoDevice, EFI_PCI_COMMAND_MEMORY_WRITE_AND_INVALIDATE);
+    // Enable other PCI supported attributes but not defined in PCI_IO_PROTOCOL
+    // For PCI Express devices, Memory Write and Invalidate is hardwired to 0b so only enable it for PCI devices.
+    if (!PciIoDevice->IsPciExp) {
+      PCI_ENABLE_COMMAND_REGISTER (PciIoDevice, EFI_PCI_COMMAND_MEMORY_WRITE_AND_INVALIDATE);
+    }
   }
 
   FastB2BSupport = TRUE;
@@ -1173,14 +1259,14 @@ DetermineDeviceAttribute (
   //
   CurrentLink = PciIoDevice->ChildList.ForwardLink;
   while (CurrentLink != NULL && CurrentLink != &PciIoDevice->ChildList) {
-
-    Temp    = PCI_IO_DEVICE_FROM_LINK (CurrentLink);
-    Status  = DetermineDeviceAttribute (Temp);
+    Temp   = PCI_IO_DEVICE_FROM_LINK (CurrentLink);
+    Status = DetermineDeviceAttribute (Temp);
     if (EFI_ERROR (Status)) {
       return Status;
     }
+
     //
-    // Detect Fast Bact to Bact support for the device under the bridge
+    // Detect Fast Back to Back support for the device under the bridge
     //
     Status = GetFastBackToBackSupport (Temp, PCI_PRIMARY_STATUS_OFFSET);
     if (FastB2BSupport && EFI_ERROR (Status)) {
@@ -1189,13 +1275,12 @@ DetermineDeviceAttribute (
 
     CurrentLink = CurrentLink->ForwardLink;
   }
+
   //
   // Set or clear Fast Back to Back bit for the whole bridge
   //
   if (!IsListEmpty (&PciIoDevice->ChildList)) {
-
     if (IS_PCI_BRIDGE (&PciIoDevice->Pci)) {
-
       Status = GetFastBackToBackSupport (PciIoDevice, PCI_BRIDGE_STATUS_REGISTER_OFFSET);
 
       if (EFI_ERROR (Status) || (!FastB2BSupport)) {
@@ -1218,6 +1303,7 @@ DetermineDeviceAttribute (
       CurrentLink = CurrentLink->ForwardLink;
     }
   }
+
   //
   // End for IsListEmpty
   //
@@ -1229,6 +1315,7 @@ DetermineDeviceAttribute (
 
   @param PciIoDevice      Input Pci device instance. Output Pci device instance with updated
                           Bar information.
+  @param IgnoreOptionRom  Output If the option rom of incompatible device need to be ignored.
 
   @retval EFI_SUCCESS     Successfully updated bar information.
   @retval EFI_UNSUPPORTED Given PCI device doesn't belong to incompatible PCI device list.
@@ -1236,20 +1323,20 @@ DetermineDeviceAttribute (
 **/
 EFI_STATUS
 UpdatePciInfo (
-  IN OUT PCI_IO_DEVICE    *PciIoDevice
+  IN OUT PCI_IO_DEVICE  *PciIoDevice,
+  OUT BOOLEAN           *IgnoreOptionRom
   )
 {
-  EFI_STATUS                        Status;
-  UINTN                             BarIndex;
-  UINTN                             BarEndIndex;
-  BOOLEAN                           SetFlag;
-  VOID                              *Configuration;
-  EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR *Ptr;
+  EFI_STATUS                         Status;
+  UINTN                              BarIndex;
+  BOOLEAN                            SetFlag;
+  VOID                               *Configuration;
+  EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR  *Ptr;
 
   Configuration = NULL;
   Status        = EFI_SUCCESS;
 
-  if (gEfiIncompatiblePciDeviceSupport == NULL) {
+  if (gIncompatiblePciDeviceSupport == NULL) {
     //
     // It can only be supported after the Incompatible PCI Device
     // Support Protocol has been installed
@@ -1257,37 +1344,36 @@ UpdatePciInfo (
     Status = gBS->LocateProtocol (
                     &gEfiIncompatiblePciDeviceSupportProtocolGuid,
                     NULL,
-                    (VOID **) &gEfiIncompatiblePciDeviceSupport
+                    (VOID **)&gIncompatiblePciDeviceSupport
                     );
   }
-  if (Status == EFI_SUCCESS) {
-      //
-      // Check whether the device belongs to incompatible devices from protocol or not
-      // If it is , then get its special requirement in the ACPI table
-      //
-      Status = gEfiIncompatiblePciDeviceSupport->CheckDevice (
-                                                   gEfiIncompatiblePciDeviceSupport,
-                                                   PciIoDevice->Pci.Hdr.VendorId,
-                                                   PciIoDevice->Pci.Hdr.DeviceId,
-                                                   PciIoDevice->Pci.Hdr.RevisionID,
-                                                   PciIoDevice->Pci.Device.SubsystemVendorID,
-                                                   PciIoDevice->Pci.Device.SubsystemID,
-                                                   &Configuration
-                                                   );
 
+  if (Status == EFI_SUCCESS) {
+    //
+    // Check whether the device belongs to incompatible devices from protocol or not
+    // If it is , then get its special requirement in the ACPI table
+    //
+    Status = gIncompatiblePciDeviceSupport->CheckDevice (
+                                              gIncompatiblePciDeviceSupport,
+                                              PciIoDevice->Pci.Hdr.VendorId,
+                                              PciIoDevice->Pci.Hdr.DeviceId,
+                                              PciIoDevice->Pci.Hdr.RevisionID,
+                                              PciIoDevice->Pci.Device.SubsystemVendorID,
+                                              PciIoDevice->Pci.Device.SubsystemID,
+                                              &Configuration
+                                              );
   }
 
-  if (EFI_ERROR (Status) || Configuration == NULL ) {
+  if (EFI_ERROR (Status) || (Configuration == NULL)) {
     return EFI_UNSUPPORTED;
   }
 
   //
   // Update PCI device information from the ACPI table
   //
-  Ptr = (EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR *) Configuration;
+  Ptr = (EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR *)Configuration;
 
   while (Ptr->Desc != ACPI_END_TAG_DESCRIPTOR) {
-
     if (Ptr->Desc != ACPI_ADDRESS_SPACE_DESCRIPTOR) {
       //
       // The format is not support
@@ -1295,48 +1381,89 @@ UpdatePciInfo (
       break;
     }
 
-    BarIndex    = (UINTN) Ptr->AddrTranslationOffset;
-    BarEndIndex = BarIndex;
-
     //
-    // Update all the bars in the device
+    // According to "Table 20. ACPI 2.0 & 3.0 QWORD Address Space Descriptor Usage"
+    // in PI Spec 1.7, Type-specific flags can be set to 0 when Address Translation
+    // Offset == 6 to skip device option ROM (do not probe option rom BAR).
     //
-    if (BarIndex == PCI_BAR_ALL) {
-      BarIndex    = 0;
-      BarEndIndex = PCI_MAX_BAR - 1;
-    }
-
-    if (BarIndex > PCI_MAX_BAR) {
+    if (((Ptr->AddrTranslationOffset == PCI_MAX_BAR) && (Ptr->SpecificFlag == 0))) {
+      *IgnoreOptionRom = TRUE;
       Ptr++;
       continue;
     }
 
-    for (; BarIndex <= BarEndIndex; BarIndex++) {
+    for (BarIndex = 0; BarIndex < PCI_MAX_BAR; BarIndex++) {
+      if ((Ptr->AddrTranslationOffset != MAX_UINT64) &&
+          (Ptr->AddrTranslationOffset != MAX_UINT8) &&
+          (Ptr->AddrTranslationOffset != BarIndex)
+          )
+      {
+        //
+        // Skip updating when AddrTranslationOffset is not MAX_UINT64 or MAX_UINT8 (wide match).
+        // Skip updating when current BarIndex doesn't equal to AddrTranslationOffset.
+        // Comparing against MAX_UINT8 is to keep backward compatibility.
+        //
+        continue;
+      }
+
       SetFlag = FALSE;
       switch (Ptr->ResType) {
-      case ACPI_ADDRESS_SPACE_TYPE_MEM:
+        case ACPI_ADDRESS_SPACE_TYPE_MEM:
 
-        //
-        // Make sure the bar is memory type
-        //
-        if (CheckBarType (PciIoDevice, (UINT8) BarIndex, PciBarTypeMem)) {
-          SetFlag = TRUE;
-        }
-        break;
+          //
+          // Make sure the bar is memory type
+          //
+          if (CheckBarType (PciIoDevice, (UINT8)BarIndex, PciBarTypeMem)) {
+            SetFlag = TRUE;
 
-      case ACPI_ADDRESS_SPACE_TYPE_IO:
+            //
+            // Ignored if granularity is 0.
+            // Ignored if PCI BAR is I/O or 32-bit memory.
+            // If PCI BAR is 64-bit memory and granularity is 32, then
+            // the PCI BAR resource is allocated below 4GB.
+            // If PCI BAR is 64-bit memory and granularity is 64, then
+            // the PCI BAR resource is allocated above 4GB.
+            //
+            if (PciIoDevice->PciBar[BarIndex].BarType == PciBarTypeMem64) {
+              switch (Ptr->AddrSpaceGranularity) {
+                case 32:
+                  PciIoDevice->PciBar[BarIndex].BarType = PciBarTypeMem32;
+                case 64:
+                  PciIoDevice->PciBar[BarIndex].BarTypeFixed = TRUE;
+                  break;
+                default:
+                  break;
+              }
+            }
 
-        //
-        // Make sure the bar is IO type
-        //
-        if (CheckBarType (PciIoDevice, (UINT8) BarIndex, PciBarTypeIo)) {
-          SetFlag = TRUE;
-        }
-        break;
+            if (PciIoDevice->PciBar[BarIndex].BarType == PciBarTypePMem64) {
+              switch (Ptr->AddrSpaceGranularity) {
+                case 32:
+                  PciIoDevice->PciBar[BarIndex].BarType = PciBarTypePMem32;
+                case 64:
+                  PciIoDevice->PciBar[BarIndex].BarTypeFixed = TRUE;
+                  break;
+                default:
+                  break;
+              }
+            }
+          }
+
+          break;
+
+        case ACPI_ADDRESS_SPACE_TYPE_IO:
+
+          //
+          // Make sure the bar is IO type
+          //
+          if (CheckBarType (PciIoDevice, (UINT8)BarIndex, PciBarTypeIo)) {
+            SetFlag = TRUE;
+          }
+
+          break;
       }
 
       if (SetFlag) {
-
         //
         // Update the new alignment for the device
         //
@@ -1345,7 +1472,7 @@ UpdatePciInfo (
         //
         // Update the new length for the device
         //
-        if (Ptr->AddrLen != PCI_BAR_NOCHANGE) {
+        if (Ptr->AddrLen != 0) {
           PciIoDevice->PciBar[BarIndex].Length = Ptr->AddrLen;
         }
       }
@@ -1361,6 +1488,8 @@ UpdatePciInfo (
 
 /**
   This routine will update the alignment with the new alignment.
+  Compare with OLD_ALIGN/EVEN_ALIGN/SQUAD_ALIGN/DQUAD_ALIGN is to keep
+  backward compatibility.
 
   @param Alignment    Input Old alignment. Output updated alignment.
   @param NewAlignment New alignment.
@@ -1368,8 +1497,8 @@ UpdatePciInfo (
 **/
 VOID
 SetNewAlign (
-  IN OUT UINT64     *Alignment,
-  IN     UINT64     NewAlignment
+  IN OUT UINT64  *Alignment,
+  IN     UINT64  NewAlignment
   )
 {
   UINT64  OldAlignment;
@@ -1379,42 +1508,44 @@ SetNewAlign (
   // The new alignment is the same as the original,
   // so skip it
   //
-  if (NewAlignment == PCI_BAR_OLD_ALIGN) {
-    return ;
+  if ((NewAlignment == 0) || (NewAlignment == OLD_ALIGN)) {
+    return;
   }
+
   //
   // Check the validity of the parameter
   //
-   if (NewAlignment != PCI_BAR_EVEN_ALIGN  &&
-       NewAlignment != PCI_BAR_SQUAD_ALIGN &&
-       NewAlignment != PCI_BAR_DQUAD_ALIGN ) {
+  if ((NewAlignment != EVEN_ALIGN) &&
+      (NewAlignment != SQUAD_ALIGN) &&
+      (NewAlignment != DQUAD_ALIGN))
+  {
     *Alignment = NewAlignment;
-    return ;
+    return;
   }
 
-  OldAlignment  = (*Alignment) + 1;
-  ShiftBit      = 0;
+  OldAlignment = (*Alignment) + 1;
+  ShiftBit     = 0;
 
   //
   // Get the first non-zero hex value of the length
   //
   while ((OldAlignment & 0x0F) == 0x00) {
     OldAlignment = RShiftU64 (OldAlignment, 4);
-    ShiftBit += 4;
+    ShiftBit    += 4;
   }
 
   //
   // Adjust the alignment to even, quad or double quad boundary
   //
-  if (NewAlignment == PCI_BAR_EVEN_ALIGN) {
+  if (NewAlignment == EVEN_ALIGN) {
     if ((OldAlignment & 0x01) != 0) {
       OldAlignment = OldAlignment + 2 - (OldAlignment & 0x01);
     }
-  } else if (NewAlignment == PCI_BAR_SQUAD_ALIGN) {
+  } else if (NewAlignment == SQUAD_ALIGN) {
     if ((OldAlignment & 0x03) != 0) {
       OldAlignment = OldAlignment + 4 - (OldAlignment & 0x03);
     }
-  } else if (NewAlignment == PCI_BAR_DQUAD_ALIGN) {
+  } else if (NewAlignment == DQUAD_ALIGN) {
     if ((OldAlignment & 0x07) != 0) {
       OldAlignment = OldAlignment + 8 - (OldAlignment & 0x07);
     }
@@ -1423,10 +1554,10 @@ SetNewAlign (
   //
   // Update the old value
   //
-  NewAlignment  = LShiftU64 (OldAlignment, ShiftBit) - 1;
-  *Alignment    = NewAlignment;
+  NewAlignment = LShiftU64 (OldAlignment, ShiftBit) - 1;
+  *Alignment   = NewAlignment;
 
-  return ;
+  return;
 }
 
 /**
@@ -1463,11 +1594,11 @@ PciIovParseVfBar (
   Value         = 0;
 
   Status = VfBarExisted (
-            PciIoDevice,
-            Offset,
-            &Value,
-            &OriginalValue
-            );
+             PciIoDevice,
+             Offset,
+             &Value,
+             &OriginalValue
+             );
 
   if (EFI_ERROR (Status)) {
     PciIoDevice->VfPciBar[BarIndex].BaseAddress = 0;
@@ -1477,135 +1608,133 @@ PciIovParseVfBar (
     //
     // Scan all the BARs anyway
     //
-    PciIoDevice->VfPciBar[BarIndex].Offset = (UINT16) Offset;
+    PciIoDevice->VfPciBar[BarIndex].Offset = (UINT16)Offset;
     return Offset + 4;
   }
 
-  PciIoDevice->VfPciBar[BarIndex].Offset = (UINT16) Offset;
+  PciIoDevice->VfPciBar[BarIndex].Offset = (UINT16)Offset;
   if ((Value & 0x01) != 0) {
     //
     // Device I/Os. Impossible
     //
     ASSERT (FALSE);
     return Offset + 4;
-
   } else {
-
-    Mask  = 0xfffffff0;
+    Mask = 0xfffffff0;
 
     PciIoDevice->VfPciBar[BarIndex].BaseAddress = OriginalValue & Mask;
 
     switch (Value & 0x07) {
+      //
+      // memory space; anywhere in 32 bit address space
+      //
+      case 0x00:
+        if ((Value & 0x08) != 0) {
+          PciIoDevice->VfPciBar[BarIndex].BarType = PciBarTypePMem32;
+        } else {
+          PciIoDevice->VfPciBar[BarIndex].BarType = PciBarTypeMem32;
+        }
 
-    //
-    //memory space; anywhere in 32 bit address space
-    //
-    case 0x00:
-      if ((Value & 0x08) != 0) {
-        PciIoDevice->VfPciBar[BarIndex].BarType = PciBarTypePMem32;
-      } else {
-        PciIoDevice->VfPciBar[BarIndex].BarType = PciBarTypeMem32;
-      }
+        PciIoDevice->VfPciBar[BarIndex].Length    = (~(Value & Mask)) + 1;
+        PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->VfPciBar[BarIndex].Length - 1;
 
-      PciIoDevice->VfPciBar[BarIndex].Length    = (~(Value & Mask)) + 1;
-      PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->VfPciBar[BarIndex].Length - 1;
+        //
+        // Adjust Length
+        //
+        PciIoDevice->VfPciBar[BarIndex].Length = MultU64x32 (PciIoDevice->VfPciBar[BarIndex].Length, PciIoDevice->InitialVFs);
+        //
+        // Adjust Alignment
+        //
+        if (PciIoDevice->VfPciBar[BarIndex].Alignment < PciIoDevice->SystemPageSize - 1) {
+          PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->SystemPageSize - 1;
+        }
+
+        break;
 
       //
-      // Adjust Length
+      // memory space; anywhere in 64 bit address space
       //
-      PciIoDevice->VfPciBar[BarIndex].Length = MultU64x32 (PciIoDevice->VfPciBar[BarIndex].Length, PciIoDevice->InitialVFs);
+      case 0x04:
+        if ((Value & 0x08) != 0) {
+          PciIoDevice->VfPciBar[BarIndex].BarType = PciBarTypePMem64;
+        } else {
+          PciIoDevice->VfPciBar[BarIndex].BarType = PciBarTypeMem64;
+        }
+
+        //
+        // According to PCI 2.2,if the bar indicates a memory 64 decoding, next bar
+        // is regarded as an extension for the first bar. As a result
+        // the sizing will be conducted on combined 64 bit value
+        // Here just store the masked first 32bit value for future size
+        // calculation
+        //
+        PciIoDevice->VfPciBar[BarIndex].Length    = Value & Mask;
+        PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->VfPciBar[BarIndex].Length - 1;
+
+        if (PciIoDevice->VfPciBar[BarIndex].Alignment < PciIoDevice->SystemPageSize - 1) {
+          PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->SystemPageSize - 1;
+        }
+
+        //
+        // Increment the offset to point to next DWORD
+        //
+        Offset += 4;
+
+        Status = VfBarExisted (
+                   PciIoDevice,
+                   Offset,
+                   &Value,
+                   &OriginalValue
+                   );
+
+        if (EFI_ERROR (Status)) {
+          PciIoDevice->VfPciBar[BarIndex].BarType = PciBarTypeUnknown;
+          return Offset + 4;
+        }
+
+        //
+        // Fix the length to support some special 64 bit BAR
+        //
+        Value |= ((UINT32)-1 << HighBitSet32 (Value));
+
+        //
+        // Calculate the size of 64bit bar
+        //
+        PciIoDevice->VfPciBar[BarIndex].BaseAddress |= LShiftU64 ((UINT64)OriginalValue, 32);
+
+        PciIoDevice->VfPciBar[BarIndex].Length    = PciIoDevice->VfPciBar[BarIndex].Length | LShiftU64 ((UINT64)Value, 32);
+        PciIoDevice->VfPciBar[BarIndex].Length    = (~(PciIoDevice->VfPciBar[BarIndex].Length)) + 1;
+        PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->VfPciBar[BarIndex].Length - 1;
+
+        //
+        // Adjust Length
+        //
+        PciIoDevice->VfPciBar[BarIndex].Length = MultU64x32 (PciIoDevice->VfPciBar[BarIndex].Length, PciIoDevice->InitialVFs);
+        //
+        // Adjust Alignment
+        //
+        if (PciIoDevice->VfPciBar[BarIndex].Alignment < PciIoDevice->SystemPageSize - 1) {
+          PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->SystemPageSize - 1;
+        }
+
+        break;
+
       //
-      // Adjust Alignment
+      // reserved
       //
-      if (PciIoDevice->VfPciBar[BarIndex].Alignment < PciIoDevice->SystemPageSize - 1) {
-        PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->SystemPageSize - 1;
-      }
+      default:
+        PciIoDevice->VfPciBar[BarIndex].BarType   = PciBarTypeUnknown;
+        PciIoDevice->VfPciBar[BarIndex].Length    = (~(Value & Mask)) + 1;
+        PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->VfPciBar[BarIndex].Length - 1;
 
-      break;
+        if (PciIoDevice->VfPciBar[BarIndex].Alignment < PciIoDevice->SystemPageSize - 1) {
+          PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->SystemPageSize - 1;
+        }
 
-    //
-    // memory space; anywhere in 64 bit address space
-    //
-    case 0x04:
-      if ((Value & 0x08) != 0) {
-        PciIoDevice->VfPciBar[BarIndex].BarType = PciBarTypePMem64;
-      } else {
-        PciIoDevice->VfPciBar[BarIndex].BarType = PciBarTypeMem64;
-      }
-
-      //
-      // According to PCI 2.2,if the bar indicates a memory 64 decoding, next bar
-      // is regarded as an extension for the first bar. As a result
-      // the sizing will be conducted on combined 64 bit value
-      // Here just store the masked first 32bit value for future size
-      // calculation
-      //
-      PciIoDevice->VfPciBar[BarIndex].Length    = Value & Mask;
-      PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->VfPciBar[BarIndex].Length - 1;
-
-      if (PciIoDevice->VfPciBar[BarIndex].Alignment < PciIoDevice->SystemPageSize - 1) {
-        PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->SystemPageSize - 1;
-      }
-
-      //
-      // Increment the offset to point to next DWORD
-      //
-      Offset += 4;
-
-      Status = VfBarExisted (
-                PciIoDevice,
-                Offset,
-                &Value,
-                &OriginalValue
-                );
-
-      if (EFI_ERROR (Status)) {
-        return Offset + 4;
-      }
-
-      //
-      // Fix the length to support some spefic 64 bit BAR
-      //
-      Value |= ((UINT32) -1 << HighBitSet32 (Value));
-
-      //
-      // Calculate the size of 64bit bar
-      //
-      PciIoDevice->VfPciBar[BarIndex].BaseAddress |= LShiftU64 ((UINT64) OriginalValue, 32);
-
-      PciIoDevice->VfPciBar[BarIndex].Length    = PciIoDevice->VfPciBar[BarIndex].Length | LShiftU64 ((UINT64) Value, 32);
-      PciIoDevice->VfPciBar[BarIndex].Length    = (~(PciIoDevice->VfPciBar[BarIndex].Length)) + 1;
-      PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->VfPciBar[BarIndex].Length - 1;
-
-      //
-      // Adjust Length
-      //
-      PciIoDevice->VfPciBar[BarIndex].Length = MultU64x32 (PciIoDevice->VfPciBar[BarIndex].Length, PciIoDevice->InitialVFs);
-      //
-      // Adjust Alignment
-      //
-      if (PciIoDevice->VfPciBar[BarIndex].Alignment < PciIoDevice->SystemPageSize - 1) {
-        PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->SystemPageSize - 1;
-      }
-
-      break;
-
-    //
-    // reserved
-    //
-    default:
-      PciIoDevice->VfPciBar[BarIndex].BarType   = PciBarTypeUnknown;
-      PciIoDevice->VfPciBar[BarIndex].Length    = (~(Value & Mask)) + 1;
-      PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->VfPciBar[BarIndex].Length - 1;
-
-      if (PciIoDevice->VfPciBar[BarIndex].Alignment < PciIoDevice->SystemPageSize - 1) {
-        PciIoDevice->VfPciBar[BarIndex].Alignment = PciIoDevice->SystemPageSize - 1;
-      }
-
-      break;
+        break;
     }
   }
-  
+
   //
   // Check the length again so as to keep compatible with some special bars
   //
@@ -1614,7 +1743,7 @@ PciIovParseVfBar (
     PciIoDevice->VfPciBar[BarIndex].BaseAddress = 0;
     PciIoDevice->VfPciBar[BarIndex].Alignment   = 0;
   }
-  
+
   //
   // Increment number of bar
   //
@@ -1661,11 +1790,12 @@ PciParseBar (
     //
     // Some devices don't fully comply to PCI spec 2.2. So be to scan all the BARs anyway
     //
-    PciIoDevice->PciBar[BarIndex].Offset = (UINT8) Offset;
+    PciIoDevice->PciBar[BarIndex].Offset = (UINT8)Offset;
     return Offset + 4;
   }
 
-  PciIoDevice->PciBar[BarIndex].Offset = (UINT8) Offset;
+  PciIoDevice->PciBar[BarIndex].BarTypeFixed = FALSE;
+  PciIoDevice->PciBar[BarIndex].Offset       = (UINT8)Offset;
   if ((Value & 0x01) != 0) {
     //
     // Device I/Os
@@ -1679,7 +1809,6 @@ PciParseBar (
       PciIoDevice->PciBar[BarIndex].BarType   = PciBarTypeIo32;
       PciIoDevice->PciBar[BarIndex].Length    = ((~(Value & Mask)) + 1);
       PciIoDevice->PciBar[BarIndex].Alignment = PciIoDevice->PciBar[BarIndex].Length - 1;
-
     } else {
       //
       // It is a IO16 bar
@@ -1687,131 +1816,134 @@ PciParseBar (
       PciIoDevice->PciBar[BarIndex].BarType   = PciBarTypeIo16;
       PciIoDevice->PciBar[BarIndex].Length    = 0x0000FFFF & ((~(Value & Mask)) + 1);
       PciIoDevice->PciBar[BarIndex].Alignment = PciIoDevice->PciBar[BarIndex].Length - 1;
-
     }
+
     //
-    // Workaround. Some platforms inplement IO bar with 0 length
+    // Workaround. Some platforms implement IO bar with 0 length
     // Need to treat it as no-bar
     //
     if (PciIoDevice->PciBar[BarIndex].Length == 0) {
-      PciIoDevice->PciBar[BarIndex].BarType = (PCI_BAR_TYPE) 0;
+      PciIoDevice->PciBar[BarIndex].BarType = (PCI_BAR_TYPE)0;
     }
 
-    PciIoDevice->PciBar[BarIndex].Prefetchable  = FALSE;
-    PciIoDevice->PciBar[BarIndex].BaseAddress   = OriginalValue & Mask;
-
+    PciIoDevice->PciBar[BarIndex].BaseAddress = OriginalValue & Mask;
   } else {
-
-    Mask  = 0xfffffff0;
+    Mask = 0xfffffff0;
 
     PciIoDevice->PciBar[BarIndex].BaseAddress = OriginalValue & Mask;
 
     switch (Value & 0x07) {
-
-    //
-    //memory space; anywhere in 32 bit address space
-    //
-    case 0x00:
-      if ((Value & 0x08) != 0) {
-        PciIoDevice->PciBar[BarIndex].BarType = PciBarTypePMem32;
-      } else {
-        PciIoDevice->PciBar[BarIndex].BarType = PciBarTypeMem32;
-      }
-
-      PciIoDevice->PciBar[BarIndex].Length    = (~(Value & Mask)) + 1;
-      if (PciIoDevice->PciBar[BarIndex].Length < (SIZE_4KB)) {
-        //
-        // Force minimum 4KByte alignment for Virtualization technology for Directed I/O
-        //
-        PciIoDevice->PciBar[BarIndex].Alignment = (SIZE_4KB - 1);
-      } else {
-        PciIoDevice->PciBar[BarIndex].Alignment = PciIoDevice->PciBar[BarIndex].Length - 1;
-      }
-      break;
-
-    //
-    // memory space; anywhere in 64 bit address space
-    //
-    case 0x04:
-      if ((Value & 0x08) != 0) {
-        PciIoDevice->PciBar[BarIndex].BarType = PciBarTypePMem64;
-      } else {
-        PciIoDevice->PciBar[BarIndex].BarType = PciBarTypeMem64;
-      }
-
       //
-      // According to PCI 2.2,if the bar indicates a memory 64 decoding, next bar
-      // is regarded as an extension for the first bar. As a result
-      // the sizing will be conducted on combined 64 bit value
-      // Here just store the masked first 32bit value for future size
-      // calculation
+      // memory space; anywhere in 32 bit address space
       //
-      PciIoDevice->PciBar[BarIndex].Length    = Value & Mask;
-      PciIoDevice->PciBar[BarIndex].Alignment = PciIoDevice->PciBar[BarIndex].Length - 1;
-
-      //
-      // Increment the offset to point to next DWORD
-      //
-      Offset += 4;
-
-      Status = BarExisted (
-                 PciIoDevice,
-                 Offset,
-                 &Value,
-                 &OriginalValue
-                 );
-
-      if (EFI_ERROR (Status)) {
-        //
-        // the high 32 bit does not claim any BAR, we need to re-check the low 32 bit BAR again
-        //
-        if (PciIoDevice->PciBar[BarIndex].Length == 0) {
-          //
-          // some device implement MMIO bar with 0 length, need to treat it as no-bar
-          //
-          PciIoDevice->PciBar[BarIndex].BarType = PciBarTypeUnknown;
+      case 0x00:
+        if ((Value & 0x08) != 0) {
+          PciIoDevice->PciBar[BarIndex].BarType = PciBarTypePMem32;
+        } else {
+          PciIoDevice->PciBar[BarIndex].BarType = PciBarTypeMem32;
         }
-        return Offset + 4;
-      }
+
+        PciIoDevice->PciBar[BarIndex].Length = (~(Value & Mask)) + 1;
+        if (PciIoDevice->PciBar[BarIndex].Length < (SIZE_4KB)) {
+          //
+          // Force minimum 4KByte alignment for Virtualization technology for Directed I/O
+          //
+          PciIoDevice->PciBar[BarIndex].Alignment = (SIZE_4KB - 1);
+        } else {
+          PciIoDevice->PciBar[BarIndex].Alignment = PciIoDevice->PciBar[BarIndex].Length - 1;
+        }
+
+        break;
 
       //
-      // Fix the length to support some spefic 64 bit BAR
+      // memory space; anywhere in 64 bit address space
       //
-      Value |= ((UINT32)(-1) << HighBitSet32 (Value));
+      case 0x04:
+        if ((Value & 0x08) != 0) {
+          PciIoDevice->PciBar[BarIndex].BarType = PciBarTypePMem64;
+        } else {
+          PciIoDevice->PciBar[BarIndex].BarType = PciBarTypeMem64;
+        }
 
-      //
-      // Calculate the size of 64bit bar
-      //
-      PciIoDevice->PciBar[BarIndex].BaseAddress |= LShiftU64 ((UINT64) OriginalValue, 32);
-
-      PciIoDevice->PciBar[BarIndex].Length    = PciIoDevice->PciBar[BarIndex].Length | LShiftU64 ((UINT64) Value, 32);
-      PciIoDevice->PciBar[BarIndex].Length    = (~(PciIoDevice->PciBar[BarIndex].Length)) + 1;
-      if (PciIoDevice->PciBar[BarIndex].Length < (SIZE_4KB)) {
         //
-        // Force minimum 4KByte alignment for Virtualization technology for Directed I/O
+        // According to PCI 2.2,if the bar indicates a memory 64 decoding, next bar
+        // is regarded as an extension for the first bar. As a result
+        // the sizing will be conducted on combined 64 bit value
+        // Here just store the masked first 32bit value for future size
+        // calculation
         //
-        PciIoDevice->PciBar[BarIndex].Alignment = (SIZE_4KB - 1);
-      } else {
+        PciIoDevice->PciBar[BarIndex].Length    = Value & Mask;
         PciIoDevice->PciBar[BarIndex].Alignment = PciIoDevice->PciBar[BarIndex].Length - 1;
-      }
 
-      break;
+        //
+        // Increment the offset to point to next DWORD
+        //
+        Offset += 4;
 
-    //
-    // reserved
-    //
-    default:
-      PciIoDevice->PciBar[BarIndex].BarType   = PciBarTypeUnknown;
-      PciIoDevice->PciBar[BarIndex].Length    = (~(Value & Mask)) + 1;
-      if (PciIoDevice->PciBar[BarIndex].Length < (SIZE_4KB)) {
+        Status = BarExisted (
+                   PciIoDevice,
+                   Offset,
+                   &Value,
+                   &OriginalValue
+                   );
+
+        if (EFI_ERROR (Status)) {
+          //
+          // the high 32 bit does not claim any BAR, we need to re-check the low 32 bit BAR again
+          //
+          if (PciIoDevice->PciBar[BarIndex].Length == 0) {
+            //
+            // some device implement MMIO bar with 0 length, need to treat it as no-bar
+            //
+            PciIoDevice->PciBar[BarIndex].BarType = PciBarTypeUnknown;
+            return Offset + 4;
+          }
+        }
+
         //
-        // Force minimum 4KByte alignment for Virtualization technology for Directed I/O
+        // Fix the length to support some special 64 bit BAR
         //
-        PciIoDevice->PciBar[BarIndex].Alignment = (SIZE_4KB - 1);
-      } else {
-        PciIoDevice->PciBar[BarIndex].Alignment = PciIoDevice->PciBar[BarIndex].Length - 1;
-      }
-      break;
+        if (Value == 0) {
+          DEBUG ((DEBUG_INFO, "[PciBus]BAR probing for upper 32bit of MEM64 BAR returns 0, change to 0xFFFFFFFF.\n"));
+          Value = (UINT32)-1;
+        } else {
+          Value |= ((UINT32)(-1) << HighBitSet32 (Value));
+        }
+
+        //
+        // Calculate the size of 64bit bar
+        //
+        PciIoDevice->PciBar[BarIndex].BaseAddress |= LShiftU64 ((UINT64)OriginalValue, 32);
+
+        PciIoDevice->PciBar[BarIndex].Length = PciIoDevice->PciBar[BarIndex].Length | LShiftU64 ((UINT64)Value, 32);
+        PciIoDevice->PciBar[BarIndex].Length = (~(PciIoDevice->PciBar[BarIndex].Length)) + 1;
+        if (PciIoDevice->PciBar[BarIndex].Length < (SIZE_4KB)) {
+          //
+          // Force minimum 4KByte alignment for Virtualization technology for Directed I/O
+          //
+          PciIoDevice->PciBar[BarIndex].Alignment = (SIZE_4KB - 1);
+        } else {
+          PciIoDevice->PciBar[BarIndex].Alignment = PciIoDevice->PciBar[BarIndex].Length - 1;
+        }
+
+        break;
+
+      //
+      // reserved
+      //
+      default:
+        PciIoDevice->PciBar[BarIndex].BarType = PciBarTypeUnknown;
+        PciIoDevice->PciBar[BarIndex].Length  = (~(Value & Mask)) + 1;
+        if (PciIoDevice->PciBar[BarIndex].Length < (SIZE_4KB)) {
+          //
+          // Force minimum 4KByte alignment for Virtualization technology for Directed I/O
+          //
+          PciIoDevice->PciBar[BarIndex].Alignment = (SIZE_4KB - 1);
+        } else {
+          PciIoDevice->PciBar[BarIndex].Alignment = PciIoDevice->PciBar[BarIndex].Length - 1;
+        }
+
+        break;
     }
   }
 
@@ -1840,18 +1972,18 @@ PciParseBar (
 **/
 VOID
 InitializePciDevice (
-  IN PCI_IO_DEVICE    *PciIoDevice
+  IN PCI_IO_DEVICE  *PciIoDevice
   )
 {
-  EFI_PCI_IO_PROTOCOL *PciIo;
-  UINT8               Offset;
+  EFI_PCI_IO_PROTOCOL  *PciIo;
+  UINT8                Offset;
 
   PciIo = &(PciIoDevice->PciIo);
 
   //
   // Put all the resource apertures
   // Resource base is set to all ones so as to indicate its resource
-  // has not been alloacted
+  // has not been allocated
   //
   for (Offset = 0x10; Offset <= 0x24; Offset += sizeof (UINT32)) {
     PciIo->Pci.Write (PciIo, EfiPciIoWidthUint32, Offset, 1, &gAllOne);
@@ -1866,10 +1998,10 @@ InitializePciDevice (
 **/
 VOID
 InitializePpb (
-  IN PCI_IO_DEVICE    *PciIoDevice
+  IN PCI_IO_DEVICE  *PciIoDevice
   )
 {
-  EFI_PCI_IO_PROTOCOL *PciIo;
+  EFI_PCI_IO_PROTOCOL  *PciIo;
 
   PciIo = &(PciIoDevice->PciIo);
 
@@ -1910,10 +2042,10 @@ InitializePpb (
 **/
 VOID
 InitializeP2C (
-  IN PCI_IO_DEVICE    *PciIoDevice
+  IN PCI_IO_DEVICE  *PciIoDevice
   )
 {
-  EFI_PCI_IO_PROTOCOL *PciIo;
+  EFI_PCI_IO_PROTOCOL  *PciIo;
 
   PciIo = &(PciIoDevice->PciIo);
 
@@ -1941,10 +2073,92 @@ InitializeP2C (
 }
 
 /**
-  Create and initiliaze general PCI I/O device instance for
+  Authenticate the PCI device by using DeviceSecurityProtocol.
+
+  @param PciIoDevice  PCI device.
+
+  @retval EFI_SUCCESS     The device passes the authentication.
+  @return not EFI_SUCCESS The device failes the authentication or
+                          unexpected error happen during authentication.
+**/
+EFI_STATUS
+AuthenticatePciDevice (
+  IN PCI_IO_DEVICE  *PciIoDevice
+  )
+{
+  EDKII_DEVICE_IDENTIFIER  DeviceIdentifier;
+  EFI_STATUS               Status;
+
+  if (mDeviceSecurityProtocol != NULL) {
+    //
+    // Prepare the parameter
+    //
+    DeviceIdentifier.Version = EDKII_DEVICE_IDENTIFIER_REVISION;
+    CopyGuid (&DeviceIdentifier.DeviceType, &gEdkiiDeviceIdentifierTypePciGuid);
+    DeviceIdentifier.DeviceHandle = NULL;
+    Status                        = gBS->InstallMultipleProtocolInterfaces (
+                                           &DeviceIdentifier.DeviceHandle,
+                                           &gEfiDevicePathProtocolGuid,
+                                           PciIoDevice->DevicePath,
+                                           &gEdkiiDeviceIdentifierTypePciGuid,
+                                           &PciIoDevice->PciIo,
+                                           NULL
+                                           );
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+
+    //
+    // Do DeviceAuthentication
+    //
+    Status = mDeviceSecurityProtocol->DeviceAuthenticate (mDeviceSecurityProtocol, &DeviceIdentifier);
+    //
+    // Always uninstall, because they are only for Authentication.
+    // No need to check return Status.
+    //
+    gBS->UninstallMultipleProtocolInterfaces (
+           DeviceIdentifier.DeviceHandle,
+           &gEfiDevicePathProtocolGuid,
+           PciIoDevice->DevicePath,
+           &gEdkiiDeviceIdentifierTypePciGuid,
+           &PciIoDevice->PciIo,
+           NULL
+           );
+    return Status;
+  }
+
+  //
+  // Device Security Protocol is not found, just return success
+  //
+  return EFI_SUCCESS;
+}
+
+/**
+  Checks if PCI device is Root Bridge.
+
+  @param PciIoDevice       Instance of PCI device
+
+  @retval TRUE             Device is Root Bridge
+  @retval FALSE            Device is not Root Bridge
+
+**/
+BOOLEAN
+IsRootBridge (
+  IN PCI_IO_DEVICE  *PciIoDevice
+  )
+{
+  if (PciIoDevice->Parent == NULL) {
+    return TRUE;
+  } else {
+    return FALSE;
+  }
+}
+
+/**
+  Create and initialize general PCI I/O device instance for
   PCI device/bridge device/hotplug bridge device.
 
-  @param PciRootBridgeIo   Pointer to instance of EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL.
+  @param Bridge            Parent bridge instance.
   @param Pci               Input Pci information block.
   @param Bus               Device Bus NO.
   @param Device            Device device NO.
@@ -1955,11 +2169,11 @@ InitializeP2C (
 **/
 PCI_IO_DEVICE *
 CreatePciIoDevice (
-  IN PCI_IO_DEVICE                    *Bridge,
-  IN PCI_TYPE00                       *Pci,
-  IN UINT8                            Bus,
-  IN UINT8                            Device,
-  IN UINT8                            Func
+  IN PCI_IO_DEVICE  *Bridge,
+  IN PCI_TYPE00     *Pci,
+  IN UINT8          Bus,
+  IN UINT8          Device,
+  IN UINT8          Func
   )
 {
   PCI_IO_DEVICE        *PciIoDevice;
@@ -1971,14 +2185,14 @@ CreatePciIoDevice (
     return NULL;
   }
 
-  PciIoDevice->Signature        = PCI_IO_DEVICE_SIGNATURE;
-  PciIoDevice->Handle           = NULL;
-  PciIoDevice->PciRootBridgeIo  = Bridge->PciRootBridgeIo;
-  PciIoDevice->DevicePath       = NULL;
-  PciIoDevice->BusNumber        = Bus;
-  PciIoDevice->DeviceNumber     = Device;
-  PciIoDevice->FunctionNumber   = Func;
-  PciIoDevice->Decodes          = 0;
+  PciIoDevice->Signature       = PCI_IO_DEVICE_SIGNATURE;
+  PciIoDevice->Handle          = NULL;
+  PciIoDevice->PciRootBridgeIo = Bridge->PciRootBridgeIo;
+  PciIoDevice->DevicePath      = NULL;
+  PciIoDevice->BusNumber       = Bus;
+  PciIoDevice->DeviceNumber    = Device;
+  PciIoDevice->FunctionNumber  = Func;
+  PciIoDevice->Decodes         = 0;
 
   if (gFullEnumeration) {
     PciIoDevice->Allocated = FALSE;
@@ -1986,13 +2200,13 @@ CreatePciIoDevice (
     PciIoDevice->Allocated = TRUE;
   }
 
-  PciIoDevice->Registered         = FALSE;
-  PciIoDevice->Attributes         = 0;
-  PciIoDevice->Supports           = 0;
-  PciIoDevice->BusOverride        = FALSE;
-  PciIoDevice->AllOpRomProcessed  = FALSE;
+  PciIoDevice->Registered        = FALSE;
+  PciIoDevice->Attributes        = 0;
+  PciIoDevice->Supports          = 0;
+  PciIoDevice->BusOverride       = FALSE;
+  PciIoDevice->AllOpRomProcessed = FALSE;
 
-  PciIoDevice->IsPciExp           = FALSE;
+  PciIoDevice->IsPciExp = FALSE;
 
   CopyMem (&(PciIoDevice->Pci), Pci, sizeof (PCI_TYPE01));
 
@@ -2016,17 +2230,36 @@ CreatePciIoDevice (
   // Detect if PCI Express Device
   //
   PciIoDevice->PciExpressCapabilityOffset = 0;
-  Status = LocateCapabilityRegBlock (
-             PciIoDevice,
-             EFI_PCI_CAPABILITY_ID_PCIEXP,
-             &PciIoDevice->PciExpressCapabilityOffset,
-             NULL
-             );
+  Status                                  = LocateCapabilityRegBlock (
+                                              PciIoDevice,
+                                              EFI_PCI_CAPABILITY_ID_PCIEXP,
+                                              &PciIoDevice->PciExpressCapabilityOffset,
+                                              NULL
+                                              );
   if (!EFI_ERROR (Status)) {
     PciIoDevice->IsPciExp = TRUE;
   }
 
-  if (PcdGetBool (PcdAriSupport)) {
+  //
+  // Now we can do the authentication check for the device.
+  //
+  Status = AuthenticatePciDevice (PciIoDevice);
+  //
+  // If authentication fails, skip this device.
+  //
+  if (EFI_ERROR (Status)) {
+    if (PciIoDevice->DevicePath != NULL) {
+      FreePool (PciIoDevice->DevicePath);
+    }
+
+    FreePool (PciIoDevice);
+    return NULL;
+  }
+
+  //
+  // Check if device's parent is not Root Bridge
+  //
+  if (PcdGetBool (PcdAriSupport) && !IsRootBridge (Bridge)) {
     //
     // Check if the device is an ARI device.
     //
@@ -2049,34 +2282,35 @@ CreatePciIoDevice (
       //
       ParentPciIo = &Bridge->PciIo;
       ParentPciIo->Pci.Read (
-                          ParentPciIo, 
-                          EfiPciIoWidthUint32,
-                          Bridge->PciExpressCapabilityOffset + EFI_PCIE_CAPABILITY_DEVICE_CAPABILITIES_2_OFFSET,
-                          1,
-                          &Data32
-                          );
+                         ParentPciIo,
+                         EfiPciIoWidthUint32,
+                         Bridge->PciExpressCapabilityOffset + EFI_PCIE_CAPABILITY_DEVICE_CAPABILITIES_2_OFFSET,
+                         1,
+                         &Data32
+                         );
       if ((Data32 & EFI_PCIE_CAPABILITY_DEVICE_CAPABILITIES_2_ARI_FORWARDING) != 0) {
+        PciIoDevice->IsAriEnabled = TRUE;
         //
         // ARI forward support in bridge, so enable it.
         //
         ParentPciIo->Pci.Read (
-                            ParentPciIo,
-                            EfiPciIoWidthUint32,
-                            Bridge->PciExpressCapabilityOffset + EFI_PCIE_CAPABILITY_DEVICE_CONTROL_2_OFFSET,
-                            1,
-                            &Data32
-                            );
+                           ParentPciIo,
+                           EfiPciIoWidthUint32,
+                           Bridge->PciExpressCapabilityOffset + EFI_PCIE_CAPABILITY_DEVICE_CONTROL_2_OFFSET,
+                           1,
+                           &Data32
+                           );
         if ((Data32 & EFI_PCIE_CAPABILITY_DEVICE_CONTROL_2_ARI_FORWARDING) == 0) {
           Data32 |= EFI_PCIE_CAPABILITY_DEVICE_CONTROL_2_ARI_FORWARDING;
           ParentPciIo->Pci.Write (
-                              ParentPciIo,
-                              EfiPciIoWidthUint32,
-                              Bridge->PciExpressCapabilityOffset + EFI_PCIE_CAPABILITY_DEVICE_CONTROL_2_OFFSET,
-                              1,
-                              &Data32
-                              );
+                             ParentPciIo,
+                             EfiPciIoWidthUint32,
+                             Bridge->PciExpressCapabilityOffset + EFI_PCIE_CAPABILITY_DEVICE_CONTROL_2_OFFSET,
+                             1,
+                             &Data32
+                             );
           DEBUG ((
-            EFI_D_INFO,
+            DEBUG_INFO,
             " ARI: forwarding enabled for PPB[%02x:%02x:%02x]\n",
             Bridge->BusNumber,
             Bridge->DeviceNumber,
@@ -2085,7 +2319,7 @@ CreatePciIoDevice (
         }
       }
 
-      DEBUG ((EFI_D_INFO, " ARI: CapOffset = 0x%x\n", PciIoDevice->AriCapabilityOffset));
+      DEBUG ((DEBUG_INFO, " ARI: CapOffset = 0x%x\n", PciIoDevice->AriCapabilityOffset));
     }
   }
 
@@ -2101,17 +2335,17 @@ CreatePciIoDevice (
                NULL
                );
     if (!EFI_ERROR (Status)) {
-      UINT32    SupportedPageSize;
-      UINT16    VFStride;
-      UINT16    FirstVFOffset;
-      UINT16    Data16;
-      UINT32    PFRid;
-      UINT32    LastVF;
+      UINT32  SupportedPageSize;
+      UINT16  VFStride;
+      UINT16  FirstVFOffset;
+      UINT16  Data16;
+      UINT32  PFRid;
+      UINT32  LastVF;
 
       //
       // If the SR-IOV device is an ARI device, then Set ARI Capable Hierarchy for the device.
       //
-      if (PcdGetBool (PcdAriSupport) && PciIoDevice->AriCapabilityOffset != 0) {
+      if (PcdGetBool (PcdAriSupport) && (PciIoDevice->AriCapabilityOffset != 0)) {
         PciIo->Pci.Read (
                      PciIo,
                      EfiPciIoWidthUint16,
@@ -2186,23 +2420,31 @@ CreatePciIoDevice (
       //
       // Calculate LastVF
       //
-      PFRid = EFI_PCI_RID(Bus, Device, Func);
-      LastVF = PFRid + FirstVFOffset + (PciIoDevice->InitialVFs - 1) * VFStride;
+      if (PciIoDevice->InitialVFs == 0) {
+        PciIoDevice->ReservedBusNum = 0;
+      } else {
+        PFRid  = EFI_PCI_RID (Bus, Device, Func);
+        LastVF = PFRid + FirstVFOffset + (PciIoDevice->InitialVFs - 1) * VFStride;
 
-      //
-      // Calculate ReservedBusNum for this PF
-      //
-      PciIoDevice->ReservedBusNum = (UINT16)(EFI_PCI_BUS_OF_RID (LastVF) - Bus + 1);
+        //
+        // Calculate ReservedBusNum for this PF
+        //
+        PciIoDevice->ReservedBusNum = (UINT16)(EFI_PCI_BUS_OF_RID (LastVF) - Bus);
+      }
 
       DEBUG ((
-        EFI_D_INFO,
+        DEBUG_INFO,
         " SR-IOV: SupportedPageSize = 0x%x; SystemPageSize = 0x%x; FirstVFOffset = 0x%x;\n",
-        SupportedPageSize, PciIoDevice->SystemPageSize >> 12, FirstVFOffset
+        SupportedPageSize,
+        PciIoDevice->SystemPageSize >> 12,
+        FirstVFOffset
         ));
       DEBUG ((
-        EFI_D_INFO,
+        DEBUG_INFO,
         "         InitialVFs = 0x%x; ReservedBusNum = 0x%x; CapOffset = 0x%x\n",
-        PciIoDevice->InitialVFs, PciIoDevice->ReservedBusNum, PciIoDevice->SrIovCapabilityOffset
+        PciIoDevice->InitialVFs,
+        PciIoDevice->ReservedBusNum,
+        PciIoDevice->SrIovCapabilityOffset
         ));
     }
   }
@@ -2215,7 +2457,32 @@ CreatePciIoDevice (
                NULL
                );
     if (!EFI_ERROR (Status)) {
-      DEBUG ((EFI_D_INFO, " MR-IOV: CapOffset = 0x%x\n", PciIoDevice->MrIovCapabilityOffset));
+      DEBUG ((DEBUG_INFO, " MR-IOV: CapOffset = 0x%x\n", PciIoDevice->MrIovCapabilityOffset));
+    }
+  }
+
+  PciIoDevice->ResizableBarOffset = 0;
+  if (PcdGetBool (PcdPcieResizableBarSupport)) {
+    Status = LocatePciExpressCapabilityRegBlock (
+               PciIoDevice,
+               PCI_EXPRESS_EXTENDED_CAPABILITY_RESIZABLE_BAR_ID,
+               &PciIoDevice->ResizableBarOffset,
+               NULL
+               );
+    if (!EFI_ERROR (Status)) {
+      PCI_EXPRESS_EXTENDED_CAPABILITIES_RESIZABLE_BAR_CONTROL  ResizableBarControl;
+      UINT32                                                   Offset;
+      Offset = PciIoDevice->ResizableBarOffset + sizeof (PCI_EXPRESS_EXTENDED_CAPABILITIES_HEADER)
+               + sizeof (PCI_EXPRESS_EXTENDED_CAPABILITIES_RESIZABLE_BAR_CAPABILITY),
+      PciIo->Pci.Read (
+                   PciIo,
+                   EfiPciIoWidthUint8,
+                   Offset,
+                   sizeof (PCI_EXPRESS_EXTENDED_CAPABILITIES_RESIZABLE_BAR_CONTROL),
+                   &ResizableBarControl
+                   );
+      PciIoDevice->ResizableBarNumber = ResizableBarControl.Bits.ResizableBarNumber;
+      PciProgramResizableBar (PciIoDevice, PciResizableBarMax);
     }
   }
 
@@ -2251,16 +2518,15 @@ CreatePciIoDevice (
 **/
 EFI_STATUS
 PciEnumeratorLight (
-  IN EFI_HANDLE                    Controller
+  IN EFI_HANDLE  Controller
   )
 {
-
-  EFI_STATUS                        Status;
-  EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL   *PciRootBridgeIo;
-  PCI_IO_DEVICE                     *RootBridgeDev;
-  UINT16                            MinBus;
-  UINT16                            MaxBus;
-  EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR *Descriptors;
+  EFI_STATUS                         Status;
+  EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL    *PciRootBridgeIo;
+  PCI_IO_DEVICE                      *RootBridgeDev;
+  UINT16                             MinBus;
+  UINT16                             MaxBus;
+  EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR  *Descriptors;
 
   MinBus      = 0;
   MaxBus      = PCI_MAX_BUS;
@@ -2279,23 +2545,22 @@ PciEnumeratorLight (
   Status = gBS->OpenProtocol (
                   Controller,
                   &gEfiPciRootBridgeIoProtocolGuid,
-                  (VOID **) &PciRootBridgeIo,
+                  (VOID **)&PciRootBridgeIo,
                   gPciBusDriverBinding.DriverBindingHandle,
                   Controller,
                   EFI_OPEN_PROTOCOL_BY_DRIVER
                   );
-  if (EFI_ERROR (Status) && Status != EFI_ALREADY_STARTED) {
+  if (EFI_ERROR (Status) && (Status != EFI_ALREADY_STARTED)) {
     return Status;
   }
 
-  Status = PciRootBridgeIo->Configuration (PciRootBridgeIo, (VOID **) &Descriptors);
+  Status = PciRootBridgeIo->Configuration (PciRootBridgeIo, (VOID **)&Descriptors);
 
   if (EFI_ERROR (Status)) {
     return Status;
   }
 
   while (PciGetBusRange (&Descriptors, &MinBus, &MaxBus, NULL) == EFI_SUCCESS) {
-
     //
     // Create a device node for root bridge device with a NULL host bridge controller handle
     //
@@ -2307,17 +2572,16 @@ PciEnumeratorLight (
     }
 
     //
-    // Record the root bridgeio protocol
+    // Record the root bridge-io protocol
     //
     RootBridgeDev->PciRootBridgeIo = PciRootBridgeIo;
 
     Status = PciPciDeviceInfoCollector (
                RootBridgeDev,
-               (UINT8) MinBus
+               (UINT8)MinBus
                );
 
     if (!EFI_ERROR (Status)) {
-
       //
       // Remove those PCI devices which are rejected when full enumeration
       //
@@ -2338,9 +2602,8 @@ PciEnumeratorLight (
       //
       InsertRootBridge (RootBridgeDev);
     } else {
-
       //
-      // If unsuccessly, destroy the entire node
+      // If unsuccessfully, destroy the entire node
       //
       DestroyRootBridge (RootBridgeDev);
     }
@@ -2374,15 +2637,15 @@ PciGetBusRange (
   while ((*Descriptors)->Desc != ACPI_END_TAG_DESCRIPTOR) {
     if ((*Descriptors)->ResType == ACPI_ADDRESS_SPACE_TYPE_BUS) {
       if (MinBus != NULL) {
-        *MinBus = (UINT16) (*Descriptors)->AddrRangeMin;
+        *MinBus = (UINT16)(*Descriptors)->AddrRangeMin;
       }
 
       if (MaxBus != NULL) {
-        *MaxBus = (UINT16) (*Descriptors)->AddrRangeMax;
+        *MaxBus = (UINT16)(*Descriptors)->AddrRangeMax;
       }
 
       if (BusRange != NULL) {
-        *BusRange = (UINT16) (*Descriptors)->AddrLen;
+        *BusRange = (UINT16)(*Descriptors)->AddrLen;
       }
 
       return EFI_SUCCESS;
@@ -2405,12 +2668,12 @@ PciGetBusRange (
 **/
 EFI_STATUS
 StartManagingRootBridge (
-  IN PCI_IO_DEVICE *RootBridgeDev
+  IN PCI_IO_DEVICE  *RootBridgeDev
   )
 {
-  EFI_HANDLE                      RootBridgeHandle;
-  EFI_STATUS                      Status;
-  EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL *PciRootBridgeIo;
+  EFI_HANDLE                       RootBridgeHandle;
+  EFI_STATUS                       Status;
+  EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL  *PciRootBridgeIo;
 
   //
   // Get the root bridge handle
@@ -2424,13 +2687,13 @@ StartManagingRootBridge (
   Status = gBS->OpenProtocol (
                   RootBridgeHandle,
                   &gEfiPciRootBridgeIoProtocolGuid,
-                  (VOID **) &PciRootBridgeIo,
+                  (VOID **)&PciRootBridgeIo,
                   gPciBusDriverBinding.DriverBindingHandle,
                   RootBridgeHandle,
                   EFI_OPEN_PROTOCOL_BY_DRIVER
                   );
 
-  if (EFI_ERROR (Status) && Status != EFI_ALREADY_STARTED) {
+  if (EFI_ERROR (Status) && (Status != EFI_ALREADY_STARTED)) {
     return Status;
   }
 
@@ -2440,7 +2703,6 @@ StartManagingRootBridge (
   RootBridgeDev->PciRootBridgeIo = PciRootBridgeIo;
 
   return EFI_SUCCESS;
-
 }
 
 /**
@@ -2454,7 +2716,7 @@ StartManagingRootBridge (
 **/
 BOOLEAN
 IsPciDeviceRejected (
-  IN PCI_IO_DEVICE *PciIoDevice
+  IN PCI_IO_DEVICE  *PciIoDevice
   )
 {
   EFI_STATUS  Status;
@@ -2475,9 +2737,8 @@ IsPciDeviceRejected (
     // Only test base registers for P2C
     //
     for (BarOffset = 0x1C; BarOffset <= 0x38; BarOffset += 2 * sizeof (UINT32)) {
-
-      Mask    = (BarOffset < 0x2C) ? 0xFFFFF000 : 0xFFFFFFFC;
-      Status  = BarExisted (PciIoDevice, BarOffset, &TestValue, &OldValue);
+      Mask   = (BarOffset < 0x2C) ? 0xFFFFF000 : 0xFFFFFFFC;
+      Status = BarExisted (PciIoDevice, BarOffset, &TestValue, &OldValue);
       if (EFI_ERROR (Status)) {
         continue;
       }
@@ -2504,7 +2765,6 @@ IsPciDeviceRejected (
     }
 
     if ((TestValue & 0x01) != 0) {
-
       //
       // IO Bar
       //
@@ -2513,9 +2773,7 @@ IsPciDeviceRejected (
       if ((TestValue != 0) && (TestValue == (OldValue & Mask))) {
         return TRUE;
       }
-
     } else {
-
       //
       // Mem Bar
       //
@@ -2523,13 +2781,11 @@ IsPciDeviceRejected (
       TestValue = TestValue & Mask;
 
       if ((TestValue & 0x07) == 0x04) {
-
         //
         // Mem64 or PMem64
         //
         BarOffset += sizeof (UINT32);
         if ((TestValue != 0) && (TestValue == (OldValue & Mask))) {
-
           //
           // Test its high 32-Bit BAR
           //
@@ -2538,9 +2794,7 @@ IsPciDeviceRejected (
             return TRUE;
           }
         }
-
       } else {
-
         //
         // Mem32 or PMem32
         //
@@ -2563,24 +2817,23 @@ IsPciDeviceRejected (
 **/
 VOID
 ResetAllPpbBusNumber (
-  IN PCI_IO_DEVICE                      *Bridge,
-  IN UINT8                              StartBusNumber
+  IN PCI_IO_DEVICE  *Bridge,
+  IN UINT8          StartBusNumber
   )
 {
-  EFI_STATUS                      Status;
-  PCI_TYPE00                      Pci;
-  UINT8                           Device;
-  UINT32                          Register;
-  UINT8                           Func;
-  UINT64                          Address;
-  UINT8                           SecondaryBus;
-  EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL *PciRootBridgeIo;
+  EFI_STATUS                       Status;
+  PCI_TYPE00                       Pci;
+  UINT8                            Device;
+  UINT32                           Register;
+  UINT8                            Func;
+  UINT64                           Address;
+  UINT8                            SecondaryBus;
+  EFI_PCI_ROOT_BRIDGE_IO_PROTOCOL  *PciRootBridgeIo;
 
   PciRootBridgeIo = Bridge->PciRootBridgeIo;
 
   for (Device = 0; Device <= PCI_MAX_DEVICE; Device++) {
     for (Func = 0; Func <= PCI_MAX_FUNC; Func++) {
-
       //
       // Check to see whether a pci device is present
       //
@@ -2592,17 +2845,23 @@ ResetAllPpbBusNumber (
                  Func
                  );
 
-      if (!EFI_ERROR (Status) && (IS_PCI_BRIDGE (&Pci))) {
+      if (EFI_ERROR (Status) && (Func == 0)) {
+        //
+        // go to next device if there is no Function 0
+        //
+        break;
+      }
 
-        Register  = 0;
-        Address   = EFI_PCI_ADDRESS (StartBusNumber, Device, Func, 0x18);
-        Status    = PciRootBridgeIo->Pci.Read (
-                                           PciRootBridgeIo,
-                                           EfiPciWidthUint32,
-                                           Address,
-                                           1,
-                                           &Register
-                                           );
+      if (!EFI_ERROR (Status) && (IS_PCI_BRIDGE (&Pci))) {
+        Register = 0;
+        Address  = EFI_PCI_ADDRESS (StartBusNumber, Device, Func, 0x18);
+        Status   = PciRootBridgeIo->Pci.Read (
+                                          PciRootBridgeIo,
+                                          EfiPciWidthUint32,
+                                          Address,
+                                          1,
+                                          &Register
+                                          );
         SecondaryBus = (UINT8)(Register >> 8);
 
         if (SecondaryBus != 0) {
@@ -2613,16 +2872,16 @@ ResetAllPpbBusNumber (
         // Reset register 18h, 19h, 1Ah on PCI Bridge
         //
         Register &= 0xFF000000;
-        Status = PciRootBridgeIo->Pci.Write (
-                                        PciRootBridgeIo,
-                                        EfiPciWidthUint32,
-                                        Address,
-                                        1,
-                                        &Register
-                                        );
+        Status    = PciRootBridgeIo->Pci.Write (
+                                           PciRootBridgeIo,
+                                           EfiPciWidthUint32,
+                                           Address,
+                                           1,
+                                           &Register
+                                           );
       }
 
-      if (Func == 0 && !IS_PCI_MULTI_FUNC (&Pci)) {
+      if ((Func == 0) && !IS_PCI_MULTI_FUNC (&Pci)) {
         //
         // Skip sub functions, this is not a multi function device
         //
@@ -2631,4 +2890,3 @@ ResetAllPpbBusNumber (
     }
   }
 }
-

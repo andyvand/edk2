@@ -1,64 +1,47 @@
 /**@file
 
-Copyright (c) 2006, Intel Corporation. All rights reserved.<BR>
-This program and the accompanying materials                          
-are licensed and made available under the terms and conditions of the BSD License         
-which accompanies this distribution.  The full text of the license may be found at        
-http://opensource.org/licenses/bsd-license.php                                            
-                                                                                          
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,                     
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.             
+  Copyright (c) 2006, Intel Corporation. All rights reserved.<BR>
 
-Module Name:
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
-  FvbInfo.c
+  Module Name:
 
-Abstract:
+    FvbInfo.c
 
-  Defines data structure that is the volume header found.These data is intent
-  to decouple FVB driver with FV header.
+  Abstract:
+
+    Defines data structure that is the volume header found.These data is intent
+    to decouple FVB driver with FV header.
 
 **/
 
 //
 // The package level header files this module uses
 //
-#include <PiDxe.h>
+#include <Pi/PiFirmwareVolume.h>
+
 //
-// The protocols, PPI and GUID defintions for this module
+// The protocols, PPI and GUID definitions for this module
 //
-#include <Guid/EventGroup.h>
-#include <Guid/FirmwareFileSystem2.h>
 #include <Guid/SystemNvDataGuid.h>
-#include <Protocol/FirmwareVolumeBlock.h>
-#include <Protocol/DevicePath.h>
 //
 // The Library classes this module consumes
 //
-#include <Library/UefiLib.h>
-#include <Library/UefiDriverEntryPoint.h>
 #include <Library/BaseLib.h>
-#include <Library/DxeServicesTableLib.h>
-#include <Library/UefiRuntimeLib.h>
-#include <Library/DebugLib.h>
-#include <Library/HobLib.h>
-#include <Library/BaseMemoryLib.h>
-#include <Library/MemoryAllocationLib.h>
-#include <Library/UefiBootServicesTableLib.h>
 #include <Library/PcdLib.h>
 
 typedef struct {
-  UINT64                      FvLength;
-  EFI_FIRMWARE_VOLUME_HEADER  FvbInfo;
+  UINT64                        FvLength;
+  EFI_FIRMWARE_VOLUME_HEADER    FvbInfo;
   //
   // EFI_FV_BLOCK_MAP_ENTRY    ExtraBlockMap[n];//n=0
   //
-  EFI_FV_BLOCK_MAP_ENTRY      End[1];
+  EFI_FV_BLOCK_MAP_ENTRY        End[1];
 } EFI_FVB_MEDIA_INFO;
 
 EFI_FVB_MEDIA_INFO  mPlatformFvbMediaInfo[] = {
   //
-  // Systen NvStorage FVB
+  // System NvStorage FVB
   //
   {
     FixedPcdGet32 (PcdFlashNvStorageVariableSize) +
@@ -75,13 +58,13 @@ EFI_FVB_MEDIA_INFO  mPlatformFvbMediaInfo[] = {
       FixedPcdGet32 (PcdFlashNvStorageFtwSpareSize) +
       FixedPcdGet32 (PcdOvmfFlashNvStorageEventLogSize),
       EFI_FVH_SIGNATURE,
-      EFI_FVB2_MEMORY_MAPPED |  
-        EFI_FVB2_READ_ENABLED_CAP |
-        EFI_FVB2_READ_STATUS |
-        EFI_FVB2_WRITE_ENABLED_CAP |
-        EFI_FVB2_WRITE_STATUS |
-        EFI_FVB2_ERASE_POLARITY |
-        EFI_FVB2_ALIGNMENT_16,
+      EFI_FVB2_MEMORY_MAPPED |
+      EFI_FVB2_READ_ENABLED_CAP |
+      EFI_FVB2_READ_STATUS |
+      EFI_FVB2_WRITE_ENABLED_CAP |
+      EFI_FVB2_WRITE_STATUS |
+      EFI_FVB2_ERASE_POLARITY |
+      EFI_FVB2_ALIGNMENT_16,
       sizeof (EFI_FIRMWARE_VOLUME_HEADER) + sizeof (EFI_FV_BLOCK_MAP_ENTRY),
       0,  // CheckSum
       0,  // ExtHeaderOffset
@@ -92,9 +75,10 @@ EFI_FVB_MEDIA_INFO  mPlatformFvbMediaInfo[] = {
       {
         {
           (FixedPcdGet32 (PcdFlashNvStorageVariableSize) +
-           FixedPcdGet32 (PcdFlashNvStorageFtwWorkingSize) +
-           FixedPcdGet32 (PcdFlashNvStorageFtwSpareSize) +
-           FixedPcdGet32 (PcdOvmfFlashNvStorageEventLogSize)) / FixedPcdGet32 (PcdOvmfFirmwareBlockSize),
+            FixedPcdGet32 (PcdFlashNvStorageFtwWorkingSize) +
+            FixedPcdGet32 (PcdFlashNvStorageFtwSpareSize) +
+            FixedPcdGet32 (PcdOvmfFlashNvStorageEventLogSize)) /
+          FixedPcdGet32 (PcdOvmfFirmwareBlockSize),
           FixedPcdGet32 (PcdOvmfFirmwareBlockSize),
         }
       } // BlockMap[1]
@@ -110,27 +94,34 @@ EFI_FVB_MEDIA_INFO  mPlatformFvbMediaInfo[] = {
 
 EFI_STATUS
 GetFvbInfo (
-  IN  UINT64                        FvLength,
-  OUT EFI_FIRMWARE_VOLUME_HEADER    **FvbInfo
+  IN  UINT64                      FvLength,
+  OUT EFI_FIRMWARE_VOLUME_HEADER  **FvbInfo
   )
 {
-  STATIC BOOLEAN Checksummed = FALSE;
-  UINTN Index;
+  STATIC BOOLEAN  Checksummed = FALSE;
+  UINTN           Index;
 
   if (!Checksummed) {
-    for (Index = 0; Index < sizeof (mPlatformFvbMediaInfo) / sizeof (EFI_FVB_MEDIA_INFO); Index += 1) {
-      UINT16 Checksum;
+    for (Index = 0;
+         Index < sizeof (mPlatformFvbMediaInfo) / sizeof (EFI_FVB_MEDIA_INFO);
+         Index += 1)
+    {
+      UINT16  Checksum;
       mPlatformFvbMediaInfo[Index].FvbInfo.Checksum = 0;
-      Checksum = CalculateCheckSum16 (
-                   (UINT16*) &mPlatformFvbMediaInfo[Index].FvbInfo,
-                   mPlatformFvbMediaInfo[Index].FvbInfo.HeaderLength
-                   );
+      Checksum                                      = CalculateCheckSum16 (
+                                                        (UINT16 *)&mPlatformFvbMediaInfo[Index].FvbInfo,
+                                                        mPlatformFvbMediaInfo[Index].FvbInfo.HeaderLength
+                                                        );
       mPlatformFvbMediaInfo[Index].FvbInfo.Checksum = Checksum;
     }
+
     Checksummed = TRUE;
   }
 
-  for (Index = 0; Index < sizeof (mPlatformFvbMediaInfo) / sizeof (EFI_FVB_MEDIA_INFO); Index += 1) {
+  for (Index = 0;
+       Index < sizeof (mPlatformFvbMediaInfo) / sizeof (EFI_FVB_MEDIA_INFO);
+       Index += 1)
+  {
     if (mPlatformFvbMediaInfo[Index].FvLength == FvLength) {
       *FvbInfo = &mPlatformFvbMediaInfo[Index].FvbInfo;
       return EFI_SUCCESS;

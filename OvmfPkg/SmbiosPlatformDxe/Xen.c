@@ -1,63 +1,49 @@
 /** @file
-  Detect Xen hvmloader SMBIOS data for usage by OVMF.
+  This driver installs SMBIOS information for OVMF on Xen
 
+  Copyright (C) 2021, Red Hat, Inc.
   Copyright (c) 2011, Bei Guan <gbtju85@gmail.com>
-  Copyright (c) 2011, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2011 - 2015, Intel Corporation. All rights reserved.<BR>
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #include "SmbiosPlatformDxe.h"
-#include <Library/HobLib.h>
-#include <Guid/XenInfo.h>
-
-#define XEN_SMBIOS_PHYSICAL_ADDRESS       0x000EB000
-#define XEN_SMBIOS_PHYSICAL_END           0x000F0000
+#include "XenSmbiosPlatformDxe.h"
 
 /**
-  Locates the Xen SMBIOS data if it exists
+  Installs SMBIOS information for OVMF on Xen
 
-  @return SMBIOS_TABLE_ENTRY_POINT   Address of Xen SMBIOS data
+  @param ImageHandle     Module's image handle
+  @param SystemTable     Pointer of EFI_SYSTEM_TABLE
+
+  @retval EFI_SUCCESS    Smbios data successfully installed
+  @retval Other          Smbios data was not installed
 
 **/
-SMBIOS_TABLE_ENTRY_POINT *
-GetXenSmbiosTables (
-  VOID
+EFI_STATUS
+EFIAPI
+XenSmbiosTablePublishEntry (
+  IN EFI_HANDLE        ImageHandle,
+  IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
-  UINT8                     *XenSmbiosPtr;
-  SMBIOS_TABLE_ENTRY_POINT  *XenSmbiosEntryPointStructure;
-  EFI_HOB_GUID_TYPE         *GuidHob;
+  EFI_STATUS                Status;
+  SMBIOS_TABLE_ENTRY_POINT  *EntryPointStructure;
+  UINT8                     *SmbiosTables;
 
+  Status = EFI_NOT_FOUND;
   //
-  // See if a XenInfo HOB is available
+  // Add Xen SMBIOS data if found
   //
-  GuidHob = GetFirstGuidHob (&gEfiXenInfoGuid);
-  if (GuidHob == NULL) {
-    return NULL;
-  }
-
-  for (XenSmbiosPtr = (UINT8*)(UINTN) XEN_SMBIOS_PHYSICAL_ADDRESS;
-       XenSmbiosPtr < (UINT8*)(UINTN) XEN_SMBIOS_PHYSICAL_END;
-       XenSmbiosPtr += 0x10) {
-
-    XenSmbiosEntryPointStructure = (SMBIOS_TABLE_ENTRY_POINT *) XenSmbiosPtr;
-
-    if (!AsciiStrnCmp ((CHAR8 *) XenSmbiosEntryPointStructure->AnchorString, "_SM_", 4) &&
-        !AsciiStrnCmp ((CHAR8 *) XenSmbiosEntryPointStructure->IntermediateAnchorString, "_DMI_", 5) &&
-        IsEntryPointStructureValid (XenSmbiosEntryPointStructure)) {
-
-      return XenSmbiosEntryPointStructure;
-
+  EntryPointStructure = GetXenSmbiosTables ();
+  if (EntryPointStructure != NULL) {
+    SmbiosTables = (UINT8 *)(UINTN)EntryPointStructure->TableAddress;
+    if (SmbiosTables != NULL) {
+      Status = InstallAllStructures (SmbiosTables);
     }
   }
 
-  return NULL;
+  return Status;
 }

@@ -1,17 +1,10 @@
 /** @file
   PCI command register operations supporting functions declaration for PCI Bus module.
 
-Copyright (c) 2006 - 2009, Intel Corporation. All rights reserved.<BR>
-This program and the accompanying materials
-are licensed and made available under the terms and conditions of the BSD License
-which accompanies this distribution.  The full text of the license may be found at
-http://opensource.org/licenses/bsd-license.php
-
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+Copyright (c) 2006 - 2019, Intel Corporation. All rights reserved.<BR>
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
-
 
 #ifndef _EFI_PCI_COMMAND_H_
 #define _EFI_PCI_COMMAND_H_
@@ -22,7 +15,7 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 // They should be cleared at the beginning. The other registers
 // are owned by chipset, we should not touch them.
 //
-#define EFI_PCI_COMMAND_BITS_OWNED                          ( \
+#define EFI_PCI_COMMAND_BITS_OWNED  (                         \
                 EFI_PCI_COMMAND_IO_SPACE                    | \
                 EFI_PCI_COMMAND_MEMORY_SPACE                | \
                 EFI_PCI_COMMAND_BUS_MASTER                  | \
@@ -37,7 +30,7 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 // They should be cleared at the beginning. The other registers
 // are owned by chipset, we should not touch them.
 //
-#define EFI_PCI_BRIDGE_CONTROL_BITS_OWNED                   ( \
+#define EFI_PCI_BRIDGE_CONTROL_BITS_OWNED  (                  \
                 EFI_PCI_BRIDGE_CONTROL_ISA                  | \
                 EFI_PCI_BRIDGE_CONTROL_VGA                  | \
                 EFI_PCI_BRIDGE_CONTROL_VGA_16               | \
@@ -50,12 +43,11 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 // They should be cleared at the beginning. The other registers
 // are owned by chipset, we should not touch them.
 //
-#define EFI_PCCARD_BRIDGE_CONTROL_BITS_OWNED                ( \
+#define EFI_PCCARD_BRIDGE_CONTROL_BITS_OWNED  (               \
                 EFI_PCI_BRIDGE_CONTROL_ISA                  | \
                 EFI_PCI_BRIDGE_CONTROL_VGA                  | \
                 EFI_PCI_BRIDGE_CONTROL_FAST_BACK_TO_BACK      \
                 )
-
 
 #define EFI_GET_REGISTER      1
 #define EFI_SET_REGISTER      2
@@ -76,20 +68,20 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 **/
 EFI_STATUS
 PciOperateRegister (
-  IN  PCI_IO_DEVICE *PciIoDevice,
-  IN  UINT16        Command,
-  IN  UINT8         Offset,
-  IN  UINT8         Operation,
-  OUT UINT16        *PtrCommand
+  IN  PCI_IO_DEVICE  *PciIoDevice,
+  IN  UINT16         Command,
+  IN  UINT8          Offset,
+  IN  UINT8          Operation,
+  OUT UINT16         *PtrCommand
   );
 
 /**
-  Check the cpability supporting by given device.
+  Check the capability supporting by given device.
 
   @param PciIoDevice   Pointer to instance of PCI_IO_DEVICE.
 
-  @retval TRUE         Cpability supportted.
-  @retval FALSE        Cpability not supportted.
+  @retval TRUE         Capability supported.
+  @retval FALSE        Capability not supported.
 
 **/
 BOOLEAN
@@ -105,7 +97,7 @@ PciCapabilitySupport (
   @param Offset            A pointer to the offset returned.
   @param NextRegBlock      A pointer to the next block returned.
 
-  @retval EFI_SUCCESS      Successfuly located capability register block.
+  @retval EFI_SUCCESS      Successfully located capability register block.
   @retval EFI_UNSUPPORTED  Pci device does not support capability.
   @retval EFI_NOT_FOUND    Pci device support but can not find register block.
 
@@ -126,17 +118,17 @@ LocateCapabilityRegBlock (
   @param Offset            A pointer to the offset returned.
   @param NextRegBlock      A pointer to the next block returned.
 
-  @retval EFI_SUCCESS      Successfuly located capability register block.
+  @retval EFI_SUCCESS      Successfully located capability register block.
   @retval EFI_UNSUPPORTED  Pci device does not support capability.
   @retval EFI_NOT_FOUND    Pci device support but can not find register block.
 
 **/
 EFI_STATUS
 LocatePciExpressCapabilityRegBlock (
-  IN     PCI_IO_DEVICE *PciIoDevice,
-  IN     UINT16        CapId,
-  IN OUT UINT32        *Offset,
-     OUT UINT32        *NextRegBlock OPTIONAL
+  IN     PCI_IO_DEVICE  *PciIoDevice,
+  IN     UINT16         CapId,
+  IN OUT UINT32         *Offset,
+  OUT UINT32            *NextRegBlock OPTIONAL
   );
 
 /**
@@ -148,7 +140,7 @@ LocatePciExpressCapabilityRegBlock (
   @return status of PciIo operation
 
 **/
-#define PCI_READ_COMMAND_REGISTER(a,b) \
+#define PCI_READ_COMMAND_REGISTER(a, b) \
         PciOperateRegister (a, 0, PCI_COMMAND_OFFSET, EFI_GET_REGISTER, b)
 
 /**
@@ -160,7 +152,7 @@ LocatePciExpressCapabilityRegBlock (
   @return status of PciIo operation
 
 **/
-#define PCI_SET_COMMAND_REGISTER(a,b) \
+#define PCI_SET_COMMAND_REGISTER(a, b) \
         PciOperateRegister (a, b, PCI_COMMAND_OFFSET, EFI_SET_REGISTER, NULL)
 
 /**
@@ -172,11 +164,11 @@ LocatePciExpressCapabilityRegBlock (
   @return status of PciIo operation
 
 **/
-#define PCI_ENABLE_COMMAND_REGISTER(a,b) \
+#define PCI_ENABLE_COMMAND_REGISTER(a, b) \
         PciOperateRegister (a, b, PCI_COMMAND_OFFSET, EFI_ENABLE_REGISTER, NULL)
 
 /**
-  Macro that disalbes command register.
+  Macro that disables command register.
 
   @param a[in]            Pointer to instance of PCI_IO_DEVICE.
   @param b[in]            The disabled value written into command register.
@@ -184,7 +176,7 @@ LocatePciExpressCapabilityRegBlock (
   @return status of PciIo operation
 
 **/
-#define PCI_DISABLE_COMMAND_REGISTER(a,b) \
+#define PCI_DISABLE_COMMAND_REGISTER(a, b) \
         PciOperateRegister (a, b, PCI_COMMAND_OFFSET, EFI_DISABLE_REGISTER, NULL)
 
 /**
@@ -196,7 +188,7 @@ LocatePciExpressCapabilityRegBlock (
   @return status of PciIo operation
 
 **/
-#define PCI_READ_BRIDGE_CONTROL_REGISTER(a,b) \
+#define PCI_READ_BRIDGE_CONTROL_REGISTER(a, b) \
         PciOperateRegister (a, 0, PCI_BRIDGE_CONTROL_REGISTER_OFFSET, EFI_GET_REGISTER, b)
 
 /**
@@ -208,7 +200,7 @@ LocatePciExpressCapabilityRegBlock (
   @return status of PciIo operation
 
 **/
-#define PCI_SET_BRIDGE_CONTROL_REGISTER(a,b) \
+#define PCI_SET_BRIDGE_CONTROL_REGISTER(a, b) \
         PciOperateRegister (a, b, PCI_BRIDGE_CONTROL_REGISTER_OFFSET, EFI_SET_REGISTER, NULL)
 
 /**
@@ -220,11 +212,11 @@ LocatePciExpressCapabilityRegBlock (
   @return status of PciIo operation
 
 **/
-#define PCI_ENABLE_BRIDGE_CONTROL_REGISTER(a,b) \
+#define PCI_ENABLE_BRIDGE_CONTROL_REGISTER(a, b) \
         PciOperateRegister (a, b, PCI_BRIDGE_CONTROL_REGISTER_OFFSET, EFI_ENABLE_REGISTER, NULL)
 
 /**
- Macro that disalbes PCI bridge control register.
+ Macro that disables PCI bridge control register.
 
   @param a[in]            Pointer to instance of PCI_IO_DEVICE.
   @param b[in]            The disabled value written into command register.
@@ -232,7 +224,7 @@ LocatePciExpressCapabilityRegBlock (
   @return status of PciIo operation
 
 **/
-#define PCI_DISABLE_BRIDGE_CONTROL_REGISTER(a,b) \
+#define PCI_DISABLE_BRIDGE_CONTROL_REGISTER(a, b) \
         PciOperateRegister (a, b, PCI_BRIDGE_CONTROL_REGISTER_OFFSET, EFI_DISABLE_REGISTER, NULL)
 
 #endif

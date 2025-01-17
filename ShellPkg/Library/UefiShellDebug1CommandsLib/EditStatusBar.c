@@ -1,23 +1,17 @@
 /** @file
   Implements statusbar interface functions.
 
-  Copyright (c) 2005 - 2014, Intel Corporation. All rights reserved. <BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  Copyright (c) 2005 - 2018, Intel Corporation. All rights reserved. <BR>
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
 #include "EditStatusBar.h"
 #include "UefiShellDebug1CommandsLib.h"
 
-CHAR16  *StatusString;
-BOOLEAN StatusBarNeedRefresh;
-BOOLEAN StatusStringChanged;
+CHAR16   *StatusString;
+BOOLEAN  StatusBarNeedRefresh;
+BOOLEAN  StatusStringChanged;
 
 /**
   Initialization function for Status Bar.
@@ -27,7 +21,6 @@ BOOLEAN StatusStringChanged;
   @sa StatusBarSetStatusString
 **/
 EFI_STATUS
-EFIAPI
 StatusBarInit (
   VOID
   )
@@ -49,7 +42,6 @@ StatusBarInit (
   Cleanup function for the status bar.
 **/
 VOID
-EFIAPI
 StatusBarCleanup (
   VOID
   )
@@ -61,19 +53,19 @@ StatusBarCleanup (
 }
 
 typedef struct {
-  UINT32  Foreground : 4;
-  UINT32  Background : 3;
+  UINT32    Foreground : 4;
+  UINT32    Background : 3;
 } STATUS_BAR_COLOR_ATTRIBUTES;
 
 typedef union {
-  STATUS_BAR_COLOR_ATTRIBUTES  Colors;
-  UINTN                       Data;
+  STATUS_BAR_COLOR_ATTRIBUTES    Colors;
+  UINTN                          Data;
 } STATUS_BAR_COLOR_UNION;
 
 /**
   Cause the status bar to refresh it's printing on the screen.
 
-  @param[in] EditorFirst      TRUE to indicate the first launch of the editor.  
+  @param[in] EditorFirst      TRUE to indicate the first launch of the editor.
                               FALSE otherwise.
   @param[in] LastRow          LastPrintable row.
   @param[in] LastCol          Last printable column.
@@ -84,7 +76,6 @@ typedef union {
   @retval EFI_SUCCESS         The operation was successful.
 **/
 EFI_STATUS
-EFIAPI
 StatusBarRefresh (
   IN BOOLEAN  EditorFirst,
   IN UINTN    LastRow,
@@ -100,6 +91,7 @@ StatusBarRefresh (
   if (!StatusStringChanged && StatusBarNeedRefresh) {
     StatusBarSetStatusString (L"\0");
   }
+
   //
   // when it's called first time after editor launch, so refresh is mandatory
   //
@@ -126,7 +118,7 @@ StatusBarRefresh (
   //
   // print row, column fields
   //
-  if (FileRow != (UINTN)(-1) && FileCol != (UINTN)(-1)) {
+  if ((FileRow != (UINTN)(-1)) && (FileCol != (UINTN)(-1))) {
     ShellPrintEx (
       0,
       (INT32)(LastRow) - 1,
@@ -152,6 +144,7 @@ StatusBarRefresh (
   } else {
     ShellPrintEx ((INT32)(LastCol) - 21, (INT32)(LastRow) - 1, L"|%s|   Help: Ctrl-E", L"OVR");
   }
+
   //
   // restore the old screen attributes
   //
@@ -162,8 +155,8 @@ StatusBarRefresh (
   //
   gST->ConOut->EnableCursor (gST->ConOut, TRUE);
 
-  StatusBarNeedRefresh  = FALSE;
-  StatusStringChanged   = FALSE;
+  StatusBarNeedRefresh = FALSE;
+  StatusStringChanged  = FALSE;
 
   return EFI_SUCCESS;
 }
@@ -177,9 +170,8 @@ StatusBarRefresh (
   @retval EFI_OUT_OF_RESOURCES  A memory allocation failed.
 **/
 EFI_STATUS
-EFIAPI
 StatusBarSetStatusString (
-  IN CHAR16 *Str
+  IN CHAR16  *Str
   )
 {
   StatusStringChanged = TRUE;
@@ -201,8 +193,7 @@ StatusBarSetStatusString (
 
   @return The string that is used.
 **/
-CONST CHAR16*
-EFIAPI
+CONST CHAR16 *
 StatusBarGetString (
   VOID
   )
@@ -214,8 +205,7 @@ StatusBarGetString (
   Function to set the need refresh boolean to TRUE.
 **/
 VOID
-EFIAPI
-StatusBarSetRefresh(
+StatusBarSetRefresh (
   VOID
   )
 {
@@ -228,8 +218,7 @@ StatusBarSetRefresh(
   @retval TRUE    The status bar needs to be refreshed.
 **/
 BOOLEAN
-EFIAPI
-StatusBarGetRefresh(
+StatusBarGetRefresh (
   VOID
   )
 {

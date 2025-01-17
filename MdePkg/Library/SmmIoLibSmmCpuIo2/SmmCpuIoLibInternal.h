@@ -1,17 +1,11 @@
 /** @file
   Internal include file of SMM CPU IO Library.
   It includes all necessary protocol/library class's header file
-  for implementation of IoLib library instance. It is included 
+  for implementation of IoLib library instance. It is included
   all source code of this library instance.
-  
-  Copyright (c) 2009 - 2010, Intel Corporation. All rights reserved.<BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php.
 
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  Copyright (c) 2009 - 2018, Intel Corporation. All rights reserved.<BR>
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -25,7 +19,6 @@
 #include <Library/DebugLib.h>
 #include <Library/BaseLib.h>
 #include <Library/SmmServicesTableLib.h>
-
 
 /**
   Reads registers in the EFI CPU I/O space.
@@ -44,8 +37,8 @@
 UINT64
 EFIAPI
 IoReadWorker (
-  IN      UINTN                     Port,
-  IN      EFI_SMM_IO_WIDTH          Width
+  IN      UINTN             Port,
+  IN      EFI_SMM_IO_WIDTH  Width
   );
 
 /**
@@ -60,15 +53,15 @@ IoReadWorker (
   @param  Width         The width of the I/O operation.
   @param  Data          The value to write to the I/O port.
 
-  @return The paramter of Data.
+  @return The parameter of Data.
 
 **/
 UINT64
 EFIAPI
 IoWriteWorker (
-  IN      UINTN                     Port,
-  IN      EFI_SMM_IO_WIDTH          Width,
-  IN      UINT64                    Data
+  IN      UINTN             Port,
+  IN      EFI_SMM_IO_WIDTH  Width,
+  IN      UINT64            Data
   );
 
 /**
@@ -88,8 +81,8 @@ IoWriteWorker (
 UINT64
 EFIAPI
 MmioReadWorker (
-  IN      UINTN                     Address,
-  IN      EFI_SMM_IO_WIDTH          Width
+  IN      UINTN             Address,
+  IN      EFI_SMM_IO_WIDTH  Width
   );
 
 /**
@@ -103,16 +96,16 @@ MmioReadWorker (
                         The caller is responsible for aligning the Address if required.
   @param  Width         The width of the I/O operation.
   @param  Data          The value to write to the I/O port.
-  
+
   @return Data read from registers in the EFI system memory space.
 
 **/
 UINT64
 EFIAPI
 MmioWriteWorker (
-  IN      UINTN                     Address,
-  IN      EFI_SMM_IO_WIDTH          Width,
-  IN      UINT64                    Data
+  IN      UINTN             Address,
+  IN      EFI_SMM_IO_WIDTH  Width,
+  IN      UINT64            Data
   );
 
 #endif

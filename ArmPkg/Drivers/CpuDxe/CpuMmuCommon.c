@@ -1,14 +1,9 @@
 /** @file
 *
 *  Copyright (c) 2013, ARM Limited. All rights reserved.
+*  Copyright (c) 2017, Intel Corporation. All rights reserved.<BR>
 *
-*  This program and the accompanying materials
-*  are licensed and made available under the terms and conditions of the BSD License
-*  which accompanies this distribution.  The full text of the license may be found at
-*  http://opensource.org/licenses/bsd-license.php
-*
-*  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-*  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+*  SPDX-License-Identifier: BSD-2-Clause-Patent
 *
 **/
 
@@ -34,32 +29,35 @@
 **/
 EFI_STATUS
 SearchGcdMemorySpaces (
-  IN EFI_GCD_MEMORY_SPACE_DESCRIPTOR    *MemorySpaceMap,
-  IN UINTN                               NumberOfDescriptors,
-  IN EFI_PHYSICAL_ADDRESS                BaseAddress,
-  IN UINT64                              Length,
-  OUT UINTN                             *StartIndex,
-  OUT UINTN                             *EndIndex
+  IN EFI_GCD_MEMORY_SPACE_DESCRIPTOR  *MemorySpaceMap,
+  IN UINTN                            NumberOfDescriptors,
+  IN EFI_PHYSICAL_ADDRESS             BaseAddress,
+  IN UINT64                           Length,
+  OUT UINTN                           *StartIndex,
+  OUT UINTN                           *EndIndex
   )
 {
-  UINTN           Index;
+  UINTN  Index;
 
   *StartIndex = 0;
   *EndIndex   = 0;
   for (Index = 0; Index < NumberOfDescriptors; Index++) {
     if ((BaseAddress >= MemorySpaceMap[Index].BaseAddress) &&
-        (BaseAddress < (MemorySpaceMap[Index].BaseAddress + MemorySpaceMap[Index].Length))) {
+        (BaseAddress < (MemorySpaceMap[Index].BaseAddress + MemorySpaceMap[Index].Length)))
+    {
       *StartIndex = Index;
     }
+
     if (((BaseAddress + Length - 1) >= MemorySpaceMap[Index].BaseAddress) &&
-        ((BaseAddress + Length - 1) < (MemorySpaceMap[Index].BaseAddress + MemorySpaceMap[Index].Length))) {
+        ((BaseAddress + Length - 1) < (MemorySpaceMap[Index].BaseAddress + MemorySpaceMap[Index].Length)))
+    {
       *EndIndex = Index;
       return EFI_SUCCESS;
     }
   }
+
   return EFI_NOT_FOUND;
 }
-
 
 /**
   Sets the attributes for a specified range in Gcd Memory Space Map.
@@ -79,11 +77,11 @@ SearchGcdMemorySpaces (
 **/
 EFI_STATUS
 SetGcdMemorySpaceAttributes (
-  IN EFI_GCD_MEMORY_SPACE_DESCRIPTOR    *MemorySpaceMap,
-  IN UINTN                               NumberOfDescriptors,
-  IN EFI_PHYSICAL_ADDRESS                BaseAddress,
-  IN UINT64                              Length,
-  IN UINT64                              Attributes
+  IN EFI_GCD_MEMORY_SPACE_DESCRIPTOR  *MemorySpaceMap,
+  IN UINTN                            NumberOfDescriptors,
+  IN EFI_PHYSICAL_ADDRESS             BaseAddress,
+  IN UINT64                           Length,
+  IN UINT64                           Attributes
   )
 {
   EFI_STATUS            Status;
@@ -92,15 +90,23 @@ SetGcdMemorySpaceAttributes (
   UINTN                 EndIndex;
   EFI_PHYSICAL_ADDRESS  RegionStart;
   UINT64                RegionLength;
+  UINT64                Capabilities;
 
-  DEBUG ((DEBUG_GCD, "SetGcdMemorySpaceAttributes[0x%lX; 0x%lX] = 0x%lX\n",
-      BaseAddress, BaseAddress + Length, Attributes));
+  DEBUG ((
+    DEBUG_GCD,
+    "SetGcdMemorySpaceAttributes[0x%lX; 0x%lX] = 0x%lX\n",
+    BaseAddress,
+    BaseAddress + Length,
+    Attributes
+    ));
 
   // We do not support a smaller granularity than 4KB on ARM Architecture
   if ((Length & EFI_PAGE_MASK) != 0) {
-    DEBUG ((DEBUG_WARN,
-            "Warning: We do not support smaller granularity than 4KB on ARM Architecture (passed length: 0x%lX).\n",
-            Length));
+    DEBUG ((
+      DEBUG_WARN,
+      "Warning: We do not support smaller granularity than 4KB on ARM Architecture (passed length: 0x%lX).\n",
+      Length
+      ));
   }
 
   //
@@ -125,6 +131,7 @@ SetGcdMemorySpaceAttributes (
     if (MemorySpaceMap[Index].GcdMemoryType == EfiGcdMemoryTypeNonExistent) {
       continue;
     }
+
     //
     // Calculate the start and end address of the overlapping range
     //
@@ -133,19 +140,63 @@ SetGcdMemorySpaceAttributes (
     } else {
       RegionStart = MemorySpaceMap[Index].BaseAddress;
     }
+
     if ((BaseAddress + Length - 1) < (MemorySpaceMap[Index].BaseAddress + MemorySpaceMap[Index].Length)) {
       RegionLength = BaseAddress + Length - RegionStart;
     } else {
       RegionLength = MemorySpaceMap[Index].BaseAddress + MemorySpaceMap[Index].Length - RegionStart;
     }
+
+    // Always add RO, RP, and XP, as all memory is capable of supporting these types (they are software constructs,
+    // not hardware features) and they are critical to maintaining a security boundary.
+    Capabilities = MemorySpaceMap[Index].Capabilities | EFI_MEMORY_RO | EFI_MEMORY_RP | EFI_MEMORY_XP;
+
+    // Update GCD capabilities as these may have changed in the page table from the original GCD setting
+    // this follows the same pattern as x86 GCD and Page Table syncing
+    Status = gDS->SetMemorySpaceCapabilities (
+                    RegionStart,
+                    RegionLength,
+                    Capabilities
+                    );
+
+    if (EFI_ERROR (Status)) {
+      DEBUG ((
+        DEBUG_ERROR,
+        "%a - failed to update GCD capabilities: 0x%llx on memory region: 0x%llx length: 0x%llx Status: %r\n",
+        __func__,
+        Capabilities,
+        RegionStart,
+        RegionLength,
+        Status
+        ));
+
+      // If we fail to set capabilities, we should assert as this is a GCD internal error, but follow the previous
+      // behavior and try to set the attributes (which may or may not fail)
+      ASSERT_EFI_ERROR (Status);
+    }
+
     //
-    // Set memory attributes according to MTRR attribute and the original attribute of descriptor
+    // Set memory attributes according to page table attributes and the original attributes of descriptor
     //
-    gDS->SetMemorySpaceAttributes (
-           RegionStart,
-           RegionLength,
-           (MemorySpaceMap[Index].Attributes & ~EFI_MEMORY_CACHETYPE_MASK) | (MemorySpaceMap[Index].Capabilities & Attributes)
-           );
+    Status = gDS->SetMemorySpaceAttributes (
+                    RegionStart,
+                    RegionLength,
+                    (MemorySpaceMap[Index].Attributes & ~EFI_MEMORY_CACHETYPE_MASK) | (Attributes & Capabilities)
+                    );
+
+    if (EFI_ERROR (Status)) {
+      DEBUG ((
+        DEBUG_ERROR,
+        "%a - failed to update GCD attributes: 0x%llx on memory region: 0x%llx length: 0x%llx Status: %r\n",
+        __func__,
+        Attributes,
+        RegionStart,
+        RegionLength,
+        Status
+        ));
+
+      ASSERT_EFI_ERROR (Status);
+    }
   }
 
   return EFI_SUCCESS;
@@ -175,10 +226,10 @@ SetGcdMemorySpaceAttributes (
 EFI_STATUS
 EFIAPI
 CpuSetMemoryAttributes (
-  IN EFI_CPU_ARCH_PROTOCOL    *This,
-  IN EFI_PHYSICAL_ADDRESS      BaseAddress,
-  IN UINT64                    Length,
-  IN UINT64                    EfiAttributes
+  IN EFI_CPU_ARCH_PROTOCOL  *This,
+  IN EFI_PHYSICAL_ADDRESS   BaseAddress,
+  IN UINT64                 Length,
+  IN UINT64                 EfiAttributes
   )
 {
   EFI_STATUS  Status;
@@ -187,9 +238,13 @@ CpuSetMemoryAttributes (
   UINTN       RegionLength;
   UINTN       RegionArmAttributes;
 
+  if (mIsFlushingGCD) {
+    return EFI_SUCCESS;
+  }
+
   if ((BaseAddress & (SIZE_4KB - 1)) != 0) {
     // Minimum granularity is SIZE_4KB (4KB on ARM)
-    DEBUG ((EFI_D_PAGE, "CpuSetMemoryAttributes(%lx, %lx, %lx): Minimum ganularity is SIZE_4KB\n", BaseAddress, Length, EfiAttributes));
+    DEBUG ((DEBUG_PAGE, "CpuSetMemoryAttributes(%lx, %lx, %lx): Minimum granularity is SIZE_4KB\n", BaseAddress, Length, EfiAttributes));
     return EFI_UNSUPPORTED;
   }
 
@@ -198,85 +253,15 @@ CpuSetMemoryAttributes (
 
   // Get the region starting from 'BaseAddress' and its 'Attribute'
   RegionBaseAddress = BaseAddress;
-  Status = GetMemoryRegion (&RegionBaseAddress, &RegionLength, &RegionArmAttributes);
+  Status            = GetMemoryRegion (&RegionBaseAddress, &RegionLength, &RegionArmAttributes);
 
   // Data & Instruction Caches are flushed when we set new memory attributes.
   // So, we only set the attributes if the new region is different.
   if (EFI_ERROR (Status) || (RegionArmAttributes != ArmAttributes) ||
       ((BaseAddress + Length) > (RegionBaseAddress + RegionLength)))
   {
-    return SetMemoryAttributes (BaseAddress, Length, EfiAttributes, 0);
+    return ArmSetMemoryAttributes (BaseAddress, Length, EfiAttributes, 0);
   } else {
     return EFI_SUCCESS;
   }
 }
-
-EFI_STATUS
-EFIAPI
-CpuConvertPagesToUncachedVirtualAddress (
-  IN  VIRTUAL_UNCACHED_PAGES_PROTOCOL  *This,
-  IN  EFI_PHYSICAL_ADDRESS              Address,
-  IN  UINTN                             Length,
-  IN  EFI_PHYSICAL_ADDRESS              VirtualMask,
-  OUT UINT64                           *Attributes     OPTIONAL
-  )
-{
-  EFI_STATUS                      Status;
-  EFI_GCD_MEMORY_SPACE_DESCRIPTOR GcdDescriptor;
-
-  if (Attributes != NULL) {
-    Status = gDS->GetMemorySpaceDescriptor (Address, &GcdDescriptor);
-    if (!EFI_ERROR (Status)) {
-      *Attributes = GcdDescriptor.Attributes;
-    }
-  }
-
-  //
-  // Make this address range page fault if accessed. If it is a DMA buffer than this would
-  // be the PCI address. Code should always use the CPU address, and we will or in VirtualMask
-  // to that address.
-  //
-  Status = SetMemoryAttributes (Address, Length, EFI_MEMORY_WP, 0);
-  if (!EFI_ERROR (Status)) {
-    Status = SetMemoryAttributes (Address | VirtualMask, Length, EFI_MEMORY_UC, VirtualMask);
-  }
-
-  DEBUG ((DEBUG_INFO | DEBUG_LOAD, "CpuConvertPagesToUncachedVirtualAddress()\n    Unmapped 0x%08lx Mapped 0x%08lx 0x%x bytes\n", Address, Address | VirtualMask, Length));
-
-  return Status;
-}
-
-
-EFI_STATUS
-EFIAPI
-CpuReconvertPages (
-  IN  VIRTUAL_UNCACHED_PAGES_PROTOCOL  *This,
-  IN  EFI_PHYSICAL_ADDRESS              Address,
-  IN  UINTN                             Length,
-  IN  EFI_PHYSICAL_ADDRESS              VirtualMask,
-  IN  UINT64                            Attributes
-  )
-{
-  EFI_STATUS      Status;
-
-  DEBUG ((DEBUG_INFO | DEBUG_LOAD, "CpuReconvertPages(%lx, %x, %lx, %lx)\n", Address, Length, VirtualMask, Attributes));
-
-  //
-  // Unmap the aliased Address
-  //
-  Status = SetMemoryAttributes (Address | VirtualMask, Length, EFI_MEMORY_WP, 0);
-  if (!EFI_ERROR (Status)) {
-    //
-    // Restore atttributes
-    //
-    Status = SetMemoryAttributes (Address, Length, Attributes, 0);
-  }
-
-  return Status;
-}
-
-
-VIRTUAL_UNCACHED_PAGES_PROTOCOL  gVirtualUncachedPages = {
-  CpuConvertPagesToUncachedVirtualAddress,
-  CpuReconvertPages
-};

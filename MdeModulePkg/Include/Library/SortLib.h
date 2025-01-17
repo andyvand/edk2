@@ -2,15 +2,10 @@
   Library used for sorting and comparison routines.
 
   Copyright (c) 2009 - 2014, Intel Corporation. All rights reserved. <BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
+
 #ifndef __SORT_LIB_H__
 #define __SORT_LIB_H__
 
@@ -52,12 +47,11 @@ INTN
 VOID
 EFIAPI
 PerformQuickSort (
-  IN OUT VOID                   *BufferToSort,
-  IN CONST UINTN                Count,
-  IN CONST UINTN                ElementSize,
-  IN       SORT_COMPARE         CompareFunction
+  IN OUT VOID            *BufferToSort,
+  IN CONST UINTN         Count,
+  IN CONST UINTN         ElementSize,
+  IN       SORT_COMPARE  CompareFunction
   );
-
 
 /**
   Function to compare 2 device paths for use as CompareFunction.
@@ -72,8 +66,8 @@ PerformQuickSort (
 INTN
 EFIAPI
 DevicePathCompare (
-  IN  CONST VOID                *Buffer1,
-  IN  CONST VOID                *Buffer2
+  IN  CONST VOID  *Buffer1,
+  IN  CONST VOID  *Buffer2
   );
 
 /**
@@ -89,8 +83,8 @@ DevicePathCompare (
 INTN
 EFIAPI
 StringNoCaseCompare (
-  IN  CONST VOID                *Buffer1,
-  IN  CONST VOID                *Buffer2
+  IN  CONST VOID  *Buffer1,
+  IN  CONST VOID  *Buffer2
   );
 
 /**
@@ -106,8 +100,8 @@ StringNoCaseCompare (
 INTN
 EFIAPI
 StringCompare (
-  IN  CONST VOID                *Buffer1,
-  IN  CONST VOID                *Buffer2
+  IN  CONST VOID  *Buffer1,
+  IN  CONST VOID  *Buffer2
   );
 
 #endif //__SORT_LIB_H__

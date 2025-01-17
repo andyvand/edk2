@@ -1,14 +1,8 @@
 /** @file
     Definitions for various line and string routines
 
-  Copyright (c) 2005 - 2011, Intel Corporation. All rights reserved. <BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  Copyright (c) 2005 - 2018, Intel Corporation. All rights reserved. <BR>
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -22,14 +16,14 @@
 
   @param[in] Count      The line number to advance/retreat.
                             >0 : advance
-                            <0: retreat  
+                            <0: retreat
 
-  @retval NULL An error occured.
+  @retval NULL An error occurred.
   @return A pointer to the line after move.
 **/
 HEFI_EDITOR_LINE *
 HMoveLine (
-  IN  INTN Count
+  IN  INTN  Count
   );
 
 /**
@@ -39,12 +33,12 @@ HMoveLine (
                           >0 : advance
                           <0: retreat
 
-  @retval NULL An error occured.
+  @retval NULL An error occurred.
   @return A pointer to the line after move.
 **/
 HEFI_EDITOR_LINE *
 HMoveCurrentLine (
-  IN  INTN Count
+  IN  INTN  Count
   );
 
 /**
@@ -53,7 +47,7 @@ HMoveCurrentLine (
     Lines
     CurrentLine
     NumLines
-    ListHead 
+    ListHead
 
   @param[in] ListHead     The list head.
   @param[in] Lines        The lines.
@@ -62,8 +56,8 @@ HMoveCurrentLine (
 **/
 EFI_STATUS
 HFreeLines (
-  IN LIST_ENTRY   *ListHead,
-  IN HEFI_EDITOR_LINE *Lines
+  IN LIST_ENTRY        *ListHead,
+  IN HEFI_EDITOR_LINE  *Lines
   );
 
 /**
@@ -75,7 +69,7 @@ HFreeLines (
 **/
 INT32
 HGetTextX (
-  IN INT32 GuidX
+  IN INT32  GuidX
   );
 
 /**
@@ -87,7 +81,7 @@ HGetTextX (
 **/
 INT32
 HGetTextY (
-  IN INT32 GuidY
+  IN INT32  GuidY
   );
 
 #endif

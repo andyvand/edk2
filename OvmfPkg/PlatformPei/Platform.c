@@ -1,16 +1,10 @@
 /**@file
   Platform PEI driver
 
-  Copyright (c) 2006 - 2014, Intel Corporation. All rights reserved.<BR>
+  Copyright (c) 2006 - 2016, Intel Corporation. All rights reserved.<BR>
   Copyright (c) 2011, Andrei Warkentin <andreiw@motorola.com>
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -22,6 +16,8 @@
 //
 // The Library classes this module consumes
 //
+#include <Library/BaseMemoryLib.h>
+#include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
 #include <Library/HobLib.h>
 #include <Library/IoLib.h>
@@ -31,30 +27,23 @@
 #include <Library/PeimEntryPoint.h>
 #include <Library/PeiServicesLib.h>
 #include <Library/QemuFwCfgLib.h>
+#include <Library/QemuFwCfgS3Lib.h>
+#include <Library/QemuFwCfgSimpleParserLib.h>
 #include <Library/ResourcePublicationLib.h>
-#include <Library/BaseMemoryLib.h>
-#include <Guid/MemoryTypeInformation.h>
 #include <Ppi/MasterBootMode.h>
+#include <IndustryStandard/I440FxPiix4.h>
+#include <IndustryStandard/Microvm.h>
 #include <IndustryStandard/Pci22.h>
-#include <IndustryStandard/SmBios.h>
+#include <IndustryStandard/Q35MchIch9.h>
+#include <IndustryStandard/QemuCpuHotplug.h>
+#include <Library/MemEncryptSevLib.h>
 #include <OvmfPlatforms.h>
+#include <Library/TdxHelperLib.h>
 
 #include "Platform.h"
-#include "Cmos.h"
+#include "PlatformId.h"
 
-EFI_MEMORY_TYPE_INFORMATION mDefaultMemoryTypeInformation[] = {
-  { EfiACPIMemoryNVS,       0x004 },
-  { EfiACPIReclaimMemory,   0x008 },
-  { EfiReservedMemoryType,  0x004 },
-  { EfiRuntimeServicesData, 0x024 },
-  { EfiRuntimeServicesCode, 0x030 },
-  { EfiBootServicesCode,    0x180 },
-  { EfiBootServicesData,    0xF00 },
-  { EfiMaxMemoryType,       0x000 }
-};
-
-
-EFI_PEI_PPI_DESCRIPTOR   mPpiBootMode[] = {
+EFI_PEI_PPI_DESCRIPTOR  mPpiBootMode[] = {
   {
     EFI_PEI_PPI_DESCRIPTOR_PPI | EFI_PEI_PPI_DESCRIPTOR_TERMINATE_LIST,
     &gEfiPeiMasterBootModePpiGuid,
@@ -62,187 +51,116 @@ EFI_PEI_PPI_DESCRIPTOR   mPpiBootMode[] = {
   }
 };
 
-
-UINT16 mHostBridgeDevId;
-
-EFI_BOOT_MODE mBootMode = BOOT_WITH_FULL_CONFIGURATION;
-
-BOOLEAN mS3Supported = FALSE;
-
-
-VOID
-AddIoMemoryBaseSizeHob (
-  EFI_PHYSICAL_ADDRESS        MemoryBase,
-  UINT64                      MemorySize
-  )
-{
-  BuildResourceDescriptorHob (
-    EFI_RESOURCE_MEMORY_MAPPED_IO,
-      EFI_RESOURCE_ATTRIBUTE_PRESENT     |
-      EFI_RESOURCE_ATTRIBUTE_INITIALIZED |
-      EFI_RESOURCE_ATTRIBUTE_UNCACHEABLE |
-      EFI_RESOURCE_ATTRIBUTE_TESTED,
-    MemoryBase,
-    MemorySize
-    );
-}
-
-VOID
-AddReservedMemoryBaseSizeHob (
-  EFI_PHYSICAL_ADDRESS        MemoryBase,
-  UINT64                      MemorySize
-  )
-{
-  BuildResourceDescriptorHob (
-    EFI_RESOURCE_MEMORY_RESERVED,
-      EFI_RESOURCE_ATTRIBUTE_PRESENT     |
-      EFI_RESOURCE_ATTRIBUTE_INITIALIZED |
-      EFI_RESOURCE_ATTRIBUTE_UNCACHEABLE |
-      EFI_RESOURCE_ATTRIBUTE_TESTED,
-    MemoryBase,
-    MemorySize
-    );
-}
-
-VOID
-AddIoMemoryRangeHob (
-  EFI_PHYSICAL_ADDRESS        MemoryBase,
-  EFI_PHYSICAL_ADDRESS        MemoryLimit
-  )
-{
-  AddIoMemoryBaseSizeHob (MemoryBase, (UINT64)(MemoryLimit - MemoryBase));
-}
-
-
-VOID
-AddMemoryBaseSizeHob (
-  EFI_PHYSICAL_ADDRESS        MemoryBase,
-  UINT64                      MemorySize
-  )
-{
-  BuildResourceDescriptorHob (
-    EFI_RESOURCE_SYSTEM_MEMORY,
-      EFI_RESOURCE_ATTRIBUTE_PRESENT |
-      EFI_RESOURCE_ATTRIBUTE_INITIALIZED |
-      EFI_RESOURCE_ATTRIBUTE_UNCACHEABLE |
-      EFI_RESOURCE_ATTRIBUTE_WRITE_COMBINEABLE |
-      EFI_RESOURCE_ATTRIBUTE_WRITE_THROUGH_CACHEABLE |
-      EFI_RESOURCE_ATTRIBUTE_WRITE_BACK_CACHEABLE |
-      EFI_RESOURCE_ATTRIBUTE_TESTED,
-    MemoryBase,
-    MemorySize
-    );
-}
-
-
-VOID
-AddMemoryRangeHob (
-  EFI_PHYSICAL_ADDRESS        MemoryBase,
-  EFI_PHYSICAL_ADDRESS        MemoryLimit
-  )
-{
-  AddMemoryBaseSizeHob (MemoryBase, (UINT64)(MemoryLimit - MemoryBase));
-}
-
-
-VOID
-AddUntestedMemoryBaseSizeHob (
-  EFI_PHYSICAL_ADDRESS        MemoryBase,
-  UINT64                      MemorySize
-  )
-{
-  BuildResourceDescriptorHob (
-    EFI_RESOURCE_SYSTEM_MEMORY,
-      EFI_RESOURCE_ATTRIBUTE_PRESENT |
-      EFI_RESOURCE_ATTRIBUTE_INITIALIZED |
-      EFI_RESOURCE_ATTRIBUTE_UNCACHEABLE |
-      EFI_RESOURCE_ATTRIBUTE_WRITE_COMBINEABLE |
-      EFI_RESOURCE_ATTRIBUTE_WRITE_THROUGH_CACHEABLE |
-      EFI_RESOURCE_ATTRIBUTE_WRITE_BACK_CACHEABLE,
-    MemoryBase,
-    MemorySize
-    );
-}
-
-
-VOID
-AddUntestedMemoryRangeHob (
-  EFI_PHYSICAL_ADDRESS        MemoryBase,
-  EFI_PHYSICAL_ADDRESS        MemoryLimit
-  )
-{
-  AddUntestedMemoryBaseSizeHob (MemoryBase, (UINT64)(MemoryLimit - MemoryBase));
-}
-
 VOID
 MemMapInitialization (
-  VOID
+  IN OUT EFI_HOB_PLATFORM_INFO  *PlatformInfoHob
   )
 {
-  //
-  // Create Memory Type Information HOB
-  //
-  BuildGuidDataHob (
-    &gEfiMemoryTypeInformationGuid,
-    mDefaultMemoryTypeInformation,
-    sizeof(mDefaultMemoryTypeInformation)
-    );
+  RETURN_STATUS  PcdStatus;
 
-  //
-  // Add PCI IO Port space available for PCI resource allocations.
-  //
-  BuildResourceDescriptorHob (
-    EFI_RESOURCE_IO,
-    EFI_RESOURCE_ATTRIBUTE_PRESENT     |
-    EFI_RESOURCE_ATTRIBUTE_INITIALIZED,
-    0xC000,
-    0x4000
-    );
+  PlatformMemMapInitialization (PlatformInfoHob);
 
-  //
-  // Video memory + Legacy BIOS region
-  //
-  AddIoMemoryRangeHob (0x0A0000, BASE_1MB);
+  if (PlatformInfoHob->HostBridgeDevId == 0xffff /* microvm */) {
+    return;
+  }
 
-  if (!mXen) {
-    UINT32  TopOfLowRam;
-    TopOfLowRam = GetSystemMemorySizeBelow4gb ();
+  PcdStatus = PcdSet64S (PcdPciMmio32Base, PlatformInfoHob->PcdPciMmio32Base);
+  ASSERT_RETURN_ERROR (PcdStatus);
+  PcdStatus = PcdSet64S (PcdPciMmio32Size, PlatformInfoHob->PcdPciMmio32Size);
+  ASSERT_RETURN_ERROR (PcdStatus);
 
-    //
-    // address       purpose   size
-    // ------------  --------  -------------------------
-    // max(top, 2g)  PCI MMIO  0xFC000000 - max(top, 2g)
-    // 0xFC000000    gap                           44 MB
-    // 0xFEC00000    IO-APIC                        4 KB
-    // 0xFEC01000    gap                         1020 KB
-    // 0xFED00000    HPET                           1 KB
-    // 0xFED00400    gap                          111 KB
-    // 0xFED1C000    gap (PIIX4) / RCRB (ICH9)     16 KB
-    // 0xFED20000    gap                          896 KB
-    // 0xFEE00000    LAPIC                          1 MB
-    //
-    AddIoMemoryRangeHob (TopOfLowRam < BASE_2GB ?
-                         BASE_2GB : TopOfLowRam, 0xFC000000);
-    AddIoMemoryBaseSizeHob (0xFEC00000, SIZE_4KB);
-    AddIoMemoryBaseSizeHob (0xFED00000, SIZE_1KB);
-    if (mHostBridgeDevId == INTEL_Q35_MCH_DEVICE_ID) {
-      AddIoMemoryBaseSizeHob (ICH9_ROOT_COMPLEX_BASE, SIZE_16KB);
-    }
-    AddIoMemoryBaseSizeHob (PcdGet32(PcdCpuLocalApicBaseAddress), SIZE_1MB);
+  PcdStatus = PcdSet64S (PcdPciIoBase, PlatformInfoHob->PcdPciIoBase);
+  ASSERT_RETURN_ERROR (PcdStatus);
+  PcdStatus = PcdSet64S (PcdPciIoSize, PlatformInfoHob->PcdPciIoSize);
+  ASSERT_RETURN_ERROR (PcdStatus);
+}
+
+STATIC
+VOID
+NoexecDxeInitialization (
+  IN OUT EFI_HOB_PLATFORM_INFO  *PlatformInfoHob
+  )
+{
+  RETURN_STATUS  Status;
+
+  Status = PlatformNoexecDxeInitialization (PlatformInfoHob);
+  if (!RETURN_ERROR (Status)) {
+    Status = PcdSetBoolS (PcdSetNxForStack, PlatformInfoHob->PcdSetNxForStack);
+    ASSERT_RETURN_ERROR (Status);
   }
 }
 
+static const UINT8  EmptyFdt[] = {
+  0xd0, 0x0d, 0xfe, 0xed, 0x00, 0x00, 0x00, 0x48,
+  0x00, 0x00, 0x00, 0x38, 0x00, 0x00, 0x00, 0x48,
+  0x00, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x11,
+  0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x09,
+};
 
 VOID
-MiscInitialization (
+MicrovmInitialization (
   VOID
   )
 {
-  UINTN  PmCmd;
-  UINTN  Pmba;
-  UINTN  AcpiCtlReg;
-  UINT8  AcpiEnBit;
+  FIRMWARE_CONFIG_ITEM  FdtItem;
+  UINTN                 FdtSize;
+  UINTN                 FdtPages;
+  EFI_STATUS            Status;
+  UINT64                *FdtHobData;
+  VOID                  *NewBase;
 
+  Status = QemuFwCfgFindFile ("etc/fdt", &FdtItem, &FdtSize);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_INFO, "%a: no etc/fdt found in fw_cfg, using dummy\n", __func__));
+    FdtItem = 0;
+    FdtSize = sizeof (EmptyFdt);
+  }
+
+  FdtPages = EFI_SIZE_TO_PAGES (FdtSize);
+  NewBase  = AllocatePages (FdtPages);
+  if (NewBase == NULL) {
+    DEBUG ((DEBUG_INFO, "%a: AllocatePages failed\n", __func__));
+    return;
+  }
+
+  if (FdtItem) {
+    QemuFwCfgSelectItem (FdtItem);
+    QemuFwCfgReadBytes (FdtSize, NewBase);
+  } else {
+    CopyMem (NewBase, EmptyFdt, FdtSize);
+  }
+
+  FdtHobData = BuildGuidHob (&gFdtHobGuid, sizeof (*FdtHobData));
+  if (FdtHobData == NULL) {
+    DEBUG ((DEBUG_INFO, "%a: BuildGuidHob failed\n", __func__));
+    return;
+  }
+
+  DEBUG ((
+    DEBUG_INFO,
+    "%a: fdt at 0x%x (size %d)\n",
+    __func__,
+    NewBase,
+    FdtSize
+    ));
+  *FdtHobData = (UINTN)NewBase;
+}
+
+VOID
+MiscInitializationForMicrovm (
+  IN EFI_HOB_PLATFORM_INFO  *PlatformInfoHob
+  )
+{
+  RETURN_STATUS  PcdStatus;
+
+  ASSERT (PlatformInfoHob->HostBridgeDevId == 0xffff);
+
+  DEBUG ((DEBUG_INFO, "%a: microvm\n", __func__));
   //
   // Disable A20 Mask
   //
@@ -253,168 +171,124 @@ MiscInitialization (
   // of IO space. (Side note: unlike other HOBs, the CPU HOB is needed during
   // S3 resume as well, so we build it unconditionally.)
   //
-  BuildCpuHob (mPhysMemAddressWidth, 16);
+  BuildCpuHob (PlatformInfoHob->PhysMemAddressWidth, 16);
 
-  //
-  // Determine platform type and save Host Bridge DID to PCD
-  //
-  switch (mHostBridgeDevId) {
-    case INTEL_82441_DEVICE_ID:
-      PmCmd      = POWER_MGMT_REGISTER_PIIX4 (PCI_COMMAND_OFFSET);
-      Pmba       = POWER_MGMT_REGISTER_PIIX4 (PIIX4_PMBA);
-      AcpiCtlReg = POWER_MGMT_REGISTER_PIIX4 (PIIX4_PMREGMISC);
-      AcpiEnBit  = PIIX4_PMREGMISC_PMIOSE;
-      break;
-    case INTEL_Q35_MCH_DEVICE_ID:
-      PmCmd      = POWER_MGMT_REGISTER_Q35 (PCI_COMMAND_OFFSET);
-      Pmba       = POWER_MGMT_REGISTER_Q35 (ICH9_PMBASE);
-      AcpiCtlReg = POWER_MGMT_REGISTER_Q35 (ICH9_ACPI_CNTL);
-      AcpiEnBit  = ICH9_ACPI_CNTL_ACPI_EN;
-      break;
-    default:
-      DEBUG ((EFI_D_ERROR, "%a: Unknown Host Bridge Device ID: 0x%04x\n",
-        __FUNCTION__, mHostBridgeDevId));
-      ASSERT (FALSE);
-      return;
-  }
-  PcdSet16 (PcdOvmfHostBridgePciDevId, mHostBridgeDevId);
-
-  //
-  // If the appropriate IOspace enable bit is set, assume the ACPI PMBA
-  // has been configured (e.g., by Xen) and skip the setup here.
-  // This matches the logic in AcpiTimerLibConstructor ().
-  //
-  if ((PciRead8 (AcpiCtlReg) & AcpiEnBit) == 0) {
-    //
-    // The PEI phase should be exited with fully accessibe ACPI PM IO space:
-    // 1. set PMBA
-    //
-    PciAndThenOr32 (Pmba, (UINT32) ~0xFFC0, PcdGet16 (PcdAcpiPmBaseAddress));
-
-    //
-    // 2. set PCICMD/IOSE
-    //
-    PciOr8 (PmCmd, EFI_PCI_COMMAND_IO_SPACE);
-
-    //
-    // 3. set ACPI PM IO enable bit (PMREGMISC:PMIOSE or ACPI_CNTL:ACPI_EN)
-    //
-    PciOr8 (AcpiCtlReg, AcpiEnBit);
-  }
-
-  if (mHostBridgeDevId == INTEL_Q35_MCH_DEVICE_ID) {
-    //
-    // Set Root Complex Register Block BAR
-    //
-    PciWrite32 (
-      POWER_MGMT_REGISTER_Q35 (ICH9_RCBA),
-      ICH9_ROOT_COMPLEX_BASE | ICH9_RCBA_EN
-      );
-  }
+  MicrovmInitialization ();
+  PcdStatus = PcdSet16S (
+                PcdOvmfHostBridgePciDevId,
+                MICROVM_PSEUDO_DEVICE_ID
+                );
+  ASSERT_RETURN_ERROR (PcdStatus);
 }
 
+VOID
+MiscInitialization (
+  IN EFI_HOB_PLATFORM_INFO  *PlatformInfoHob
+  )
+{
+  RETURN_STATUS  PcdStatus;
+
+  PlatformMiscInitialization (PlatformInfoHob);
+
+  PcdStatus = PcdSet16S (PcdOvmfHostBridgePciDevId, PlatformInfoHob->HostBridgeDevId);
+  ASSERT_RETURN_ERROR (PcdStatus);
+}
 
 VOID
 BootModeInitialization (
-  VOID
+  IN OUT EFI_HOB_PLATFORM_INFO  *PlatformInfoHob
   )
 {
-  EFI_STATUS    Status;
+  EFI_STATUS  Status;
 
-  if (CmosRead8 (0xF) == 0xFE) {
-    mBootMode = BOOT_ON_S3_RESUME;
+  if (PlatformCmosRead8 (0xF) == 0xFE) {
+    PlatformInfoHob->BootMode = BOOT_ON_S3_RESUME;
   }
 
-  Status = PeiServicesSetBootMode (mBootMode);
+  PlatformCmosWrite8 (0xF, 0x00);
+
+  Status = PeiServicesSetBootMode (PlatformInfoHob->BootMode);
   ASSERT_EFI_ERROR (Status);
 
   Status = PeiServicesInstallPpi (mPpiBootMode);
   ASSERT_EFI_ERROR (Status);
 }
 
-
 VOID
 ReserveEmuVariableNvStore (
   )
 {
-  EFI_PHYSICAL_ADDRESS VariableStore;
+  EFI_PHYSICAL_ADDRESS  VariableStore;
+  RETURN_STATUS         PcdStatus;
 
-  //
-  // Allocate storage for NV variables early on so it will be
-  // at a consistent address.  Since VM memory is preserved
-  // across reboots, this allows the NV variable storage to survive
-  // a VM reboot.
-  //
-  VariableStore =
-    (EFI_PHYSICAL_ADDRESS)(UINTN)
-      AllocateAlignedRuntimePages (
-        EFI_SIZE_TO_PAGES (2 * PcdGet32 (PcdFlashNvStorageFtwSpareSize)),
-        PcdGet32 (PcdFlashNvStorageFtwSpareSize)
-        );
-  DEBUG ((EFI_D_INFO,
-          "Reserved variable store memory: 0x%lX; size: %dkb\n",
-          VariableStore,
-          (2 * PcdGet32 (PcdFlashNvStorageFtwSpareSize)) / 1024
-        ));
-  PcdSet64 (PcdEmuVariableNvStoreReserved, VariableStore);
-}
+  VariableStore = (EFI_PHYSICAL_ADDRESS)(UINTN)PlatformReserveEmuVariableNvStore ();
+  PcdStatus     = PcdSet64S (PcdEmuVariableNvStoreReserved, VariableStore);
 
-
-VOID
-DebugDumpCmos (
-  VOID
-  )
-{
-  UINTN  Loop;
-
-  DEBUG ((EFI_D_INFO, "CMOS:\n"));
-
-  for (Loop = 0; Loop < 0x80; Loop++) {
-    if ((Loop % 0x10) == 0) {
-      DEBUG ((EFI_D_INFO, "%02x:", Loop));
-    }
-    DEBUG ((EFI_D_INFO, " %02x", CmosRead8 (Loop)));
-    if ((Loop % 0x10) == 0xf) {
-      DEBUG ((EFI_D_INFO, "\n"));
-    }
+  if (FeaturePcdGet (PcdSecureBootSupported)) {
+    // restore emulated VarStore from pristine ROM copy
+    PlatformInitEmuVariableNvStore ((VOID *)(UINTN)VariableStore);
   }
+
+  ASSERT_RETURN_ERROR (PcdStatus);
 }
 
-
-/**
-  Set the SMBIOS entry point version for the generic SmbiosDxe driver.
-**/
 STATIC
 VOID
-SmbiosVersionInitialization (
+Q35BoardVerification (
+  IN EFI_HOB_PLATFORM_INFO  *PlatformInfoHob
+  )
+{
+  if (PlatformInfoHob->HostBridgeDevId == INTEL_Q35_MCH_DEVICE_ID) {
+    return;
+  }
+
+  DEBUG ((
+    DEBUG_ERROR,
+    "%a: no TSEG (SMRAM) on host bridge DID=0x%04x; "
+    "only DID=0x%04x (Q35) is supported\n",
+    __func__,
+    PlatformInfoHob->HostBridgeDevId,
+    INTEL_Q35_MCH_DEVICE_ID
+    ));
+  ASSERT (FALSE);
+  CpuDeadLoop ();
+}
+
+/**
+  Fetch the boot CPU count and the possible CPU count from QEMU, and expose
+  them to UefiCpuPkg modules. Set the MaxCpuCount field in PlatformInfoHob.
+**/
+VOID
+MaxCpuCountInitialization (
+  IN OUT EFI_HOB_PLATFORM_INFO  *PlatformInfoHob
+  )
+{
+  RETURN_STATUS  PcdStatus;
+
+  PlatformMaxCpuCountInitialization (PlatformInfoHob);
+
+  PcdStatus = PcdSet32S (PcdCpuBootLogicalProcessorNumber, PlatformInfoHob->PcdCpuBootLogicalProcessorNumber);
+  ASSERT_RETURN_ERROR (PcdStatus);
+  PcdStatus = PcdSet32S (PcdCpuMaxLogicalProcessorNumber, PlatformInfoHob->PcdCpuMaxLogicalProcessorNumber);
+  ASSERT_RETURN_ERROR (PcdStatus);
+}
+
+/**
+ * @brief Builds PlatformInfo Hob
+ */
+EFI_HOB_PLATFORM_INFO *
+BuildPlatformInfoHob (
   VOID
   )
 {
-  FIRMWARE_CONFIG_ITEM     Anchor;
-  UINTN                    AnchorSize;
-  SMBIOS_TABLE_ENTRY_POINT QemuAnchor;
-  UINT16                   SmbiosVersion;
+  EFI_HOB_PLATFORM_INFO  PlatformInfoHob;
+  EFI_HOB_GUID_TYPE      *GuidHob;
 
-  if (RETURN_ERROR (QemuFwCfgFindFile ("etc/smbios/smbios-anchor", &Anchor,
-                      &AnchorSize)) ||
-      AnchorSize != sizeof QemuAnchor) {
-    return;
-  }
-
-  QemuFwCfgSelectItem (Anchor);
-  QemuFwCfgReadBytes (AnchorSize, &QemuAnchor);
-  if (CompareMem (QemuAnchor.AnchorString, "_SM_", 4) != 0 ||
-      CompareMem (QemuAnchor.IntermediateAnchorString, "_DMI_", 5) != 0) {
-    return;
-  }
-
-  SmbiosVersion = (UINT16)(QemuAnchor.MajorVersion << 8 |
-                           QemuAnchor.MinorVersion);
-  DEBUG ((EFI_D_INFO, "%a: SMBIOS version from QEMU: 0x%04x\n", __FUNCTION__,
-    SmbiosVersion));
-  PcdSet16 (PcdSmbiosVersion, SmbiosVersion);
+  ZeroMem (&PlatformInfoHob, sizeof PlatformInfoHob);
+  BuildGuidDataHob (&gUefiOvmfPkgPlatformInfoGuid, &PlatformInfoHob, sizeof (EFI_HOB_PLATFORM_INFO));
+  GuidHob = GetFirstGuidHob (&gUefiOvmfPkgPlatformInfoGuid);
+  return (EFI_HOB_PLATFORM_INFO *)GET_GUID_HOB_DATA (GuidHob);
 }
-
 
 /**
   Perform Platform PEI initialization.
@@ -432,45 +306,83 @@ InitializePlatform (
   IN CONST EFI_PEI_SERVICES     **PeiServices
   )
 {
-  DEBUG ((EFI_D_ERROR, "Platform PEIM Loaded\n"));
+  EFI_HOB_PLATFORM_INFO  *PlatformInfoHob;
+  EFI_STATUS             Status;
 
-  DebugDumpCmos ();
+  DEBUG ((DEBUG_INFO, "Platform PEIM Loaded\n"));
+  PlatformInfoHob = BuildPlatformInfoHob ();
 
-  XenDetect ();
+  if (TdIsEnabled ()) {
+    TdxHelperBuildGuidHobForTdxMeasurement ();
+  }
+
+  PlatformInfoHob->SmmSmramRequire     = FeaturePcdGet (PcdSmmSmramRequire);
+  PlatformInfoHob->SevEsIsEnabled      = MemEncryptSevEsIsEnabled ();
+  PlatformInfoHob->PcdPciMmio64Size    = PcdGet64 (PcdPciMmio64Size);
+  PlatformInfoHob->DefaultMaxCpuNumber = PcdGet32 (PcdCpuMaxLogicalProcessorNumber);
+
+  PlatformDebugDumpCmos ();
 
   if (QemuFwCfgS3Enabled ()) {
-    DEBUG ((EFI_D_INFO, "S3 support was detected on QEMU\n"));
-    mS3Supported = TRUE;
+    DEBUG ((DEBUG_INFO, "S3 support was detected on QEMU\n"));
+    PlatformInfoHob->S3Supported = TRUE;
+    Status                       = PcdSetBoolS (PcdAcpiS3Enable, TRUE);
+    ASSERT_EFI_ERROR (Status);
   }
 
-  BootModeInitialization ();
-  AddressWidthInitialization ();
-
-  PublishPeiMemory ();
-
-  InitializeRamRegions ();
-
-  if (mXen) {
-    DEBUG ((EFI_D_INFO, "Xen was detected\n"));
-    InitializeXen ();
-  }
+  BootModeInitialization (PlatformInfoHob);
 
   //
   // Query Host Bridge DID
   //
-  mHostBridgeDevId = PciRead16 (OVMF_HOSTBRIDGE_DID);
+  PlatformInfoHob->HostBridgeDevId = PciRead16 (OVMF_HOSTBRIDGE_DID);
+  AddressWidthInitialization (PlatformInfoHob);
 
-  if (mBootMode != BOOT_ON_S3_RESUME) {
-    ReserveEmuVariableNvStore ();
+  MaxCpuCountInitialization (PlatformInfoHob);
 
-    PeiFvInitialization ();
-
-    MemMapInitialization ();
-
-    SmbiosVersionInitialization ();
+  if (PlatformInfoHob->SmmSmramRequire) {
+    Q35BoardVerification (PlatformInfoHob);
+    Q35TsegMbytesInitialization (PlatformInfoHob);
+    Q35SmramAtDefaultSmbaseInitialization (PlatformInfoHob);
   }
 
-  MiscInitialization ();
+  PublishPeiMemory (PlatformInfoHob);
+
+  PlatformQemuUc32BaseInitialization (PlatformInfoHob);
+
+  InitializeRamRegions (PlatformInfoHob);
+
+  if (PlatformInfoHob->BootMode != BOOT_ON_S3_RESUME) {
+    PeiFvInitialization (PlatformInfoHob);
+    MemTypeInfoInitialization (PlatformInfoHob);
+    MemMapInitialization (PlatformInfoHob);
+    NoexecDxeInitialization (PlatformInfoHob);
+  }
+
+  InstallClearCacheCallback ();
+  AmdSevInitialize (PlatformInfoHob);
+  if (PlatformInfoHob->HostBridgeDevId == 0xffff) {
+    MiscInitializationForMicrovm (PlatformInfoHob);
+  } else {
+    MiscInitialization (PlatformInfoHob);
+    PlatformIdInitialization (PeiServices);
+  }
+
+  IntelTdxInitialize ();
+  InstallFeatureControlCallback (PlatformInfoHob);
+  if (PlatformInfoHob->SmmSmramRequire) {
+    RelocateSmBase ();
+  }
+
+  //
+  // Performed after CoCo (SEV/TDX) initialization to allow the memory
+  // used to be validated before being used.
+  //
+  if (PlatformInfoHob->BootMode != BOOT_ON_S3_RESUME) {
+    if (!PlatformInfoHob->SmmSmramRequire) {
+      ReserveEmuVariableNvStore ();
+    }
+  }
 
   return EFI_SUCCESS;
 }

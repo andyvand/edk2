@@ -2,13 +2,7 @@
   Declares titlebar interface functions.
 
   Copyright (c) 2005 - 2011, Intel Corporation. All rights reserved. <BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -24,16 +18,14 @@
   @retval EFI_OUT_OF_RESOURCES  A memory allocation failed.
 **/
 EFI_STATUS
-EFIAPI
 MainTitleBarInit (
-  CONST CHAR16 *Prompt
+  CONST CHAR16  *Prompt
   );
 
 /**
   Clean up the memory used.
 **/
 VOID
-EFIAPI
 MainTitleBarCleanup (
   VOID
   );
@@ -62,16 +54,15 @@ typedef enum {
   @retval EFI_SUCCESS           The operation was successful.
 **/
 EFI_STATUS
-EFIAPI
 MainTitleBarRefresh (
-  IN CONST CHAR16                 *FileName OPTIONAL,
-  IN CONST EDIT_FILE_TYPE         FileType,
-  IN CONST BOOLEAN                ReadOnly,
-  IN CONST BOOLEAN                Modified,
-  IN CONST UINTN                  LastCol,
-  IN CONST UINTN                  LastRow,
-  IN CONST UINTN                  Offset,
-  IN CONST UINTN                  Size
+  IN CONST CHAR16          *FileName OPTIONAL,
+  IN CONST EDIT_FILE_TYPE  FileType,
+  IN CONST BOOLEAN         ReadOnly,
+  IN CONST BOOLEAN         Modified,
+  IN CONST UINTN           LastCol,
+  IN CONST UINTN           LastRow,
+  IN CONST UINTN           Offset,
+  IN CONST UINTN           Size
   );
 
 #endif

@@ -2,15 +2,9 @@
   Timer Library functions built upon local APIC on IA32/x64.
 
   This library uses the local APIC library so that it supports x2APIC mode.
-  
-  Copyright (c) 2010 - 2013, Intel Corporation. All rights reserved.<BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php.
 
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  Copyright (c) 2010 - 2018, Intel Corporation. All rights reserved.<BR>
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -33,10 +27,10 @@ InternalX86GetTimerFrequency (
   VOID
   )
 {
-  UINTN Divisor;
+  UINTN  Divisor;
 
   GetApicTimerState (&Divisor, NULL, NULL);
-  return PcdGet32(PcdFSBClock) / (UINT32)Divisor;
+  return PcdGet32 (PcdFSBClock) / (UINT32)Divisor;
 }
 
 /**
@@ -45,19 +39,22 @@ InternalX86GetTimerFrequency (
   Stalls the CPU for at least the given number of ticks. It's invoked by
   MicroSecondDelay() and NanoSecondDelay().
 
+  This function will ASSERT if the APIC timer intial count returned from
+  GetApicTimerInitCount() is zero.
+
   @param  Delay     A period of time to delay in ticks.
 
 **/
 VOID
 EFIAPI
 InternalX86Delay (
-  IN      UINT32                    Delay
+  IN      UINT32  Delay
   )
 {
-  INT32                             Ticks;
-  UINT32                            Times;
-  UINT32                            InitCount;
-  UINT32                            StartTick;
+  INT32   Ticks;
+  UINT32  Times;
+  UINT32  InitCount;
+  UINT32  StartTick;
 
   //
   // In case Delay is too larger, separate it into several small delay slot.
@@ -67,13 +64,14 @@ InternalX86Delay (
   // Delay and the Init Count.
   //
   InitCount = GetApicTimerInitCount ();
-  Times     = Delay / (InitCount / 2);
-  Delay     = Delay % (InitCount / 2);
+  ASSERT (InitCount != 0);
+  Times = Delay / (InitCount / 2);
+  Delay = Delay % (InitCount / 2);
 
   //
   // Get Start Tick and do delay
   //
-  StartTick  = GetApicTimerCurrentCount ();
+  StartTick = GetApicTimerCurrentCount ();
   do {
     //
     // Wait until time out by Delay value
@@ -113,7 +111,7 @@ InternalX86Delay (
 UINTN
 EFIAPI
 MicroSecondDelay (
-  IN      UINTN                     MicroSeconds
+  IN      UINTN  MicroSeconds
   )
 {
   InternalX86Delay (
@@ -141,7 +139,7 @@ MicroSecondDelay (
 UINTN
 EFIAPI
 NanoSecondDelay (
-  IN      UINTN                     NanoSeconds
+  IN      UINTN  NanoSeconds
   )
 {
   InternalX86Delay (
@@ -202,8 +200,8 @@ GetPerformanceCounter (
 UINT64
 EFIAPI
 GetPerformanceCounterProperties (
-  OUT      UINT64                    *StartValue,  OPTIONAL
-  OUT      UINT64                    *EndValue     OPTIONAL
+  OUT      UINT64  *StartValue   OPTIONAL,
+  OUT      UINT64  *EndValue     OPTIONAL
   )
 {
   if (StartValue != NULL) {
@@ -214,7 +212,7 @@ GetPerformanceCounterProperties (
     *EndValue = 0;
   }
 
-  return (UINT64) InternalX86GetTimerFrequency ();
+  return (UINT64)InternalX86GetTimerFrequency ();
 }
 
 /**
@@ -231,7 +229,7 @@ GetPerformanceCounterProperties (
 UINT64
 EFIAPI
 GetTimeInNanoSecond (
-  IN      UINT64                     Ticks
+  IN      UINT64  Ticks
   )
 {
   UINT64  Frequency;
@@ -253,9 +251,9 @@ GetTimeInNanoSecond (
   // Since 2^29 < 1,000,000,000 = 0x3B9ACA00 < 2^30, Remainder should < 2^(64-30) = 2^34,
   // i.e. highest bit set in Remainder should <= 33.
   //
-  Shift = MAX (0, HighBitSet64 (Remainder) - 33);
-  Remainder = RShiftU64 (Remainder, (UINTN) Shift);
-  Frequency = RShiftU64 (Frequency, (UINTN) Shift);
+  Shift        = MAX (0, HighBitSet64 (Remainder) - 33);
+  Remainder    = RShiftU64 (Remainder, (UINTN)Shift);
+  Frequency    = RShiftU64 (Frequency, (UINTN)Shift);
   NanoSeconds += DivU64x64Remainder (MultU64x32 (Remainder, 1000000000u), Frequency, NULL);
 
   return NanoSeconds;

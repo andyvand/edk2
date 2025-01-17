@@ -1,77 +1,32 @@
 /** @file
-  Sample ACPI Platform Driver
+  OVMF ACPI Platform Driver
 
   Copyright (c) 2008 - 2012, Intel Corporation. All rights reserved.<BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef _ACPI_PLATFORM_H_INCLUDED_
-#define _ACPI_PLATFORM_H_INCLUDED_
+#ifndef ACPI_PLATFORM_H_
+#define ACPI_PLATFORM_H_
 
-#include <PiDxe.h>
-
-#include <Protocol/AcpiTable.h>
-#include <Protocol/FirmwareVolume2.h>
-
-#include <Library/BaseLib.h>
-#include <Library/UefiBootServicesTableLib.h>
-#include <Library/DebugLib.h>
-#include <Library/PcdLib.h>
-
-#include <IndustryStandard/Acpi.h>
+#include <Protocol/AcpiTable.h> // EFI_ACPI_TABLE_PROTOCOL
 
 EFI_STATUS
 EFIAPI
-InstallAcpiTable (
-  IN   EFI_ACPI_TABLE_PROTOCOL       *AcpiProtocol,
-  IN   VOID                          *AcpiTableBuffer,
-  IN   UINTN                         AcpiTableBufferSize,
-  OUT  UINTN                         *TableKey
-  );
-
-BOOLEAN
-QemuDetected (
-  VOID
+InstallCloudHvTablesTdx (
+  IN   EFI_ACPI_TABLE_PROTOCOL  *AcpiProtocol
   );
 
 EFI_STATUS
 EFIAPI
-QemuInstallAcpiTable (
-  IN   EFI_ACPI_TABLE_PROTOCOL       *AcpiProtocol,
-  IN   VOID                          *AcpiTableBuffer,
-  IN   UINTN                         AcpiTableBufferSize,
-  OUT  UINTN                         *TableKey
-  );
-
-BOOLEAN
-XenDetected (
-  VOID
-  );
-
-EFI_STATUS
-EFIAPI
-InstallXenTables (
-  IN   EFI_ACPI_TABLE_PROTOCOL       *AcpiProtocol
-  );
-
-EFI_STATUS
-EFIAPI
-InstallQemuFwCfgTables (
-  IN   EFI_ACPI_TABLE_PROTOCOL       *AcpiProtocol
+InstallCloudHvTables (
+  IN   EFI_ACPI_TABLE_PROTOCOL  *AcpiProtocol
   );
 
 EFI_STATUS
 EFIAPI
 InstallAcpiTables (
-  IN   EFI_ACPI_TABLE_PROTOCOL       *AcpiTable
+  IN   EFI_ACPI_TABLE_PROTOCOL  *AcpiTable
   );
 
 #endif
-

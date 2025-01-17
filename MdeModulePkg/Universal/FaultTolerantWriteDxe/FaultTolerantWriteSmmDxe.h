@@ -3,14 +3,8 @@
   The internal header file includes the common header files, defines
   internal structure and functions used by FTW module.
 
-Copyright (c) 2011, Intel Corporation. All rights reserved. <BR>
-This program and the accompanying materials                          
-are licensed and made available under the terms and conditions of the BSD License         
-which accompanies this distribution.  The full text of the license may be found at        
-http://opensource.org/licenses/bsd-license.php                                            
-                                                                                          
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,                     
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED. 
+Copyright (c) 2011 - 2018, Intel Corporation. All rights reserved. <BR>
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -19,7 +13,7 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 
 #include <PiDxe.h>
 
-#include <Protocol/SmmCommunication.h>
+#include <Protocol/MmCommunication2.h>
 
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiDriverEntryPoint.h>
@@ -48,10 +42,9 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 EFI_STATUS
 EFIAPI
 FtwGetMaxBlockSize (
-  IN EFI_FAULT_TOLERANT_WRITE_PROTOCOL      *This,
-  OUT UINTN                                 *BlockSize
+  IN EFI_FAULT_TOLERANT_WRITE_PROTOCOL  *This,
+  OUT UINTN                             *BlockSize
   );
-
 
 /**
   Allocates space for the protocol to maintain information about writes.
@@ -77,12 +70,11 @@ FtwGetMaxBlockSize (
 EFI_STATUS
 EFIAPI
 FtwAllocate (
-  IN EFI_FAULT_TOLERANT_WRITE_PROTOCOL      *This,
-  IN EFI_GUID                               *CallerId,
-  IN UINTN                                  PrivateDataSize,
-  IN UINTN                                  NumberOfWrites
+  IN EFI_FAULT_TOLERANT_WRITE_PROTOCOL  *This,
+  IN EFI_GUID                           *CallerId,
+  IN UINTN                              PrivateDataSize,
+  IN UINTN                              NumberOfWrites
   );
-
 
 /**
   Starts a target block update. This records information about the write
@@ -114,15 +106,14 @@ FtwAllocate (
 EFI_STATUS
 EFIAPI
 FtwWrite (
-  IN EFI_FAULT_TOLERANT_WRITE_PROTOCOL      *This,
-  IN EFI_LBA                                Lba,
-  IN UINTN                                  Offset,
-  IN UINTN                                  Length,
-  IN VOID                                   *PrivateData,
-  IN EFI_HANDLE                             FvBlockHandle,
-  IN VOID                                   *Buffer
+  IN EFI_FAULT_TOLERANT_WRITE_PROTOCOL  *This,
+  IN EFI_LBA                            Lba,
+  IN UINTN                              Offset,
+  IN UINTN                              Length,
+  IN VOID                               *PrivateData,
+  IN EFI_HANDLE                         FvBlockHandle,
+  IN VOID                               *Buffer
   );
-
 
 /**
   Restarts a previously interrupted write. The caller must provide the
@@ -139,10 +130,9 @@ FtwWrite (
 EFI_STATUS
 EFIAPI
 FtwRestart (
-  IN EFI_FAULT_TOLERANT_WRITE_PROTOCOL      *This,
-  IN EFI_HANDLE                             FvBlockHandle
+  IN EFI_FAULT_TOLERANT_WRITE_PROTOCOL  *This,
+  IN EFI_HANDLE                         FvBlockHandle
   );
-
 
 /**
   Aborts all previously allocated writes.
@@ -157,9 +147,8 @@ FtwRestart (
 EFI_STATUS
 EFIAPI
 FtwAbort (
-  IN EFI_FAULT_TOLERANT_WRITE_PROTOCOL      *This
+  IN EFI_FAULT_TOLERANT_WRITE_PROTOCOL  *This
   );
-
 
 /**
   Starts a target block update. This function records information about the write
@@ -189,14 +178,14 @@ FtwAbort (
 EFI_STATUS
 EFIAPI
 FtwGetLastWrite (
-  IN EFI_FAULT_TOLERANT_WRITE_PROTOCOL      *This,
-  OUT EFI_GUID                              *CallerId,
-  OUT EFI_LBA                               *Lba,
-  OUT UINTN                                 *Offset,
-  OUT UINTN                                 *Length,
-  IN OUT UINTN                              *PrivateDataSize,
-  OUT VOID                                  *PrivateData,
-  OUT BOOLEAN                               *Complete
+  IN EFI_FAULT_TOLERANT_WRITE_PROTOCOL  *This,
+  OUT EFI_GUID                          *CallerId,
+  OUT EFI_LBA                           *Lba,
+  OUT UINTN                             *Offset,
+  OUT UINTN                             *Length,
+  IN OUT UINTN                          *PrivateDataSize,
+  OUT VOID                              *PrivateData,
+  OUT BOOLEAN                           *Complete
   );
 
 #endif

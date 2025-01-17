@@ -2,13 +2,7 @@
   Header file for EFI_DISK_INFO_PROTOCOL interface.
 
 Copyright (c) 2013, Intel Corporation. All rights reserved.<BR>
-This program and the accompanying materials
-are licensed and made available under the terms and conditions of the BSD License
-which accompanies this distribution.  The full text of the license may be found at
-http://opensource.org/licenses/bsd-license.php
-
-THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -26,9 +20,8 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 **/
 VOID
 InitializeDiskInfo (
-  IN  NVME_DEVICE_PRIVATE_DATA    *Device
+  IN  NVME_DEVICE_PRIVATE_DATA  *Device
   );
-
 
 /**
   Provides inquiry information for the controller type.
@@ -49,9 +42,9 @@ InitializeDiskInfo (
 EFI_STATUS
 EFIAPI
 NvmExpressDiskInfoInquiry (
-  IN     EFI_DISK_INFO_PROTOCOL   *This,
-  IN OUT VOID                     *InquiryData,
-  IN OUT UINT32                   *InquiryDataSize
+  IN     EFI_DISK_INFO_PROTOCOL  *This,
+  IN OUT VOID                    *InquiryData,
+  IN OUT UINT32                  *InquiryDataSize
   );
 
 /**
@@ -75,9 +68,9 @@ NvmExpressDiskInfoInquiry (
 EFI_STATUS
 EFIAPI
 NvmExpressDiskInfoIdentify (
-  IN     EFI_DISK_INFO_PROTOCOL   *This,
-  IN OUT VOID                     *IdentifyData,
-  IN OUT UINT32                   *IdentifyDataSize
+  IN     EFI_DISK_INFO_PROTOCOL  *This,
+  IN OUT VOID                    *IdentifyData,
+  IN OUT UINT32                  *IdentifyDataSize
   );
 
 /**
@@ -100,12 +93,11 @@ NvmExpressDiskInfoIdentify (
 EFI_STATUS
 EFIAPI
 NvmExpressDiskInfoSenseData (
-  IN     EFI_DISK_INFO_PROTOCOL   *This,
-  IN OUT VOID                     *SenseData,
-  IN OUT UINT32                   *SenseDataSize,
-  OUT    UINT8                    *SenseDataNumber
+  IN     EFI_DISK_INFO_PROTOCOL  *This,
+  IN OUT VOID                    *SenseData,
+  IN OUT UINT32                  *SenseDataSize,
+  OUT    UINT8                   *SenseDataNumber
   );
-
 
 /**
   This function is used to get controller information.
@@ -121,9 +113,9 @@ NvmExpressDiskInfoSenseData (
 EFI_STATUS
 EFIAPI
 NvmExpressDiskInfoWhichIde (
-  IN  EFI_DISK_INFO_PROTOCOL   *This,
-  OUT UINT32                   *IdeChannel,
-  OUT UINT32                   *IdeDevice
+  IN  EFI_DISK_INFO_PROTOCOL  *This,
+  OUT UINT32                  *IdeChannel,
+  OUT UINT32                  *IdeDevice
   );
 
 #endif

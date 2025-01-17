@@ -2,13 +2,7 @@
   Debug Agent library implementition with empty functions.
 
   Copyright (c) 2010, Intel Corporation. All rights reserved.<BR>
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -24,11 +18,14 @@
   function and pass it into InitializeDebugAgent(). InitializeDebugAgent() is
   responsible to invoke the passing-in function at the end of InitializeDebugAgent().
 
-  If the parameter Function is not NULL, Debug Agent Libary instance will invoke it by
+  If the parameter Function is not NULL, Debug Agent Library instance will invoke it by
   passing in the Context to be its parameter.
 
   If Function() is NULL, Debug Agent Library instance will return after setup debug
   environment.
+
+  If InitFlag is DEBUG_AGENT_INIT_SMM, Context must point to a BOOLEAN if it's not
+  NULL, which indicates SMM Debug Agent supported or not.
 
   @param[in] InitFlag     Init flag is used to decide the initialize process.
   @param[in] Context      Context needed according to InitFlag; it was optional.
@@ -40,10 +37,19 @@ VOID
 EFIAPI
 InitializeDebugAgent (
   IN UINT32                InitFlag,
-  IN VOID                  *Context, OPTIONAL
+  IN VOID                  *Context  OPTIONAL,
   IN DEBUG_AGENT_CONTINUE  Function  OPTIONAL
   )
 {
+  switch (InitFlag) {
+    case DEBUG_AGENT_INIT_SMM:
+      if (Context != NULL) {
+        *(BOOLEAN *)Context = FALSE;
+      }
+
+      return;
+  }
+
   if (Function != NULL) {
     Function (Context);
   }
@@ -64,9 +70,8 @@ InitializeDebugAgent (
 BOOLEAN
 EFIAPI
 SaveAndSetDebugTimerInterrupt (
-  IN BOOLEAN                EnableStatus
+  IN BOOLEAN  EnableStatus
   )
 {
   return FALSE;
 }
-

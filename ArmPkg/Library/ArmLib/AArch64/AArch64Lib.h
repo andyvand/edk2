@@ -2,32 +2,77 @@
 
   Copyright (c) 2008 - 2009, Apple Inc. All rights reserved.<BR>
   Portions Copyright (c) 2011 - 2013, ARM Ltd. All rights reserved.<BR>
+  Copyright (c) 2020, NUVIA Inc. All rights reserved.<BR>
 
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
-#ifndef __AARCH64_LIB_H__
-#define __AARCH64_LIB_H__
+#ifndef AARCH64_LIB_H_
+#define AARCH64_LIB_H_
 
-typedef VOID (*AARCH64_CACHE_OPERATION)(UINTN);
-
-
-VOID
-AArch64PerformPoUDataCacheOperation (
-  IN  AARCH64_CACHE_OPERATION  DataCacheOperation
+UINTN
+EFIAPI
+ArmReadIdAA64Dfr0 (
+  VOID
   );
 
-VOID
-AArch64AllDataCachesOperation (
-  IN  AARCH64_CACHE_OPERATION  DataCacheOperation
+UINTN
+EFIAPI
+ArmReadIdAA64Dfr1 (
+  VOID
   );
 
-#endif // __AARCH64_LIB_H__
+UINTN
+EFIAPI
+ArmReadIdAA64Isar0 (
+  VOID
+  );
 
+UINTN
+EFIAPI
+ArmReadIdAA64Isar1 (
+  VOID
+  );
+
+UINTN
+EFIAPI
+ArmReadIdAA64Isar2 (
+  VOID
+  );
+
+UINTN
+EFIAPI
+ArmReadIdAA64Mmfr0 (
+  VOID
+  );
+
+UINTN
+EFIAPI
+ArmReadIdAA64Mmfr1 (
+  VOID
+  );
+
+/** Reads the ID_AA64MMFR2_EL1 register.
+
+   @return The contents of the ID_AA64MMFR2_EL1 register.
+**/
+UINTN
+EFIAPI
+ArmReadIdAA64Mmfr2 (
+  VOID
+  );
+
+UINTN
+EFIAPI
+ArmReadIdAA64Pfr0 (
+  VOID
+  );
+
+UINTN
+EFIAPI
+ArmReadIdAA64Pfr1 (
+  VOID
+  );
+
+#endif // AARCH64_LIB_H_

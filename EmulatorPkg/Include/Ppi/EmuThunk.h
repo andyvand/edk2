@@ -2,14 +2,8 @@
   Emulator Thunk to abstract OS services from pure EFI code
 
   Copyright (c) 2008 - 2011, Apple Inc. All rights reserved.<BR>
-
-  This program and the accompanying materials
-  are licensed and made available under the terms and conditions of the BSD License
-  which accompanies this distribution.  The full text of the license may be found at
-  http://opensource.org/licenses/bsd-license.php
-
-  THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
-  WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+  Copyright (c) 2022, Intel Corporation. All rights reserved.<BR>
+  SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
@@ -19,13 +13,11 @@
 #define EMU_THUNK_PPI_GUID  \
  { 0xB958B78C, 0x1D3E, 0xEE40, { 0x8B, 0xF4, 0xF0, 0x63, 0x2D, 0x06, 0x39, 0x16 } }
 
-
-
 /*++
 
 Routine Description:
   This service is called from Index == 0 until it returns EFI_UNSUPPORTED.
-  It allows discontiguous memory regions to be supported by the emulator.
+  It allows discontinuous memory regions to be supported by the emulator.
 
 Arguments:
   Index      - Which memory region to use
@@ -39,12 +31,11 @@ Returns:
 **/
 typedef
 EFI_STATUS
-(EFIAPI *EMU_PEI_AUTOSCAN) (
+(EFIAPI *EMU_PEI_AUTOSCAN)(
   IN  UINTN                 Index,
   OUT EFI_PHYSICAL_ADDRESS  *MemoryBase,
   OUT UINT64                *MemorySize
   );
-
 
 /*++
 
@@ -65,13 +56,12 @@ Returns:
 **/
 typedef
 EFI_STATUS
-(EFIAPI *EMU_PEI_FD_INFORMATION) (
+(EFIAPI *EMU_PEI_FD_INFORMATION)(
   IN     UINTN                  Index,
   IN OUT EFI_PHYSICAL_ADDRESS   *FdBase,
   IN OUT UINT64                 *FdSize,
   IN OUT EFI_PHYSICAL_ADDRESS   *FixUp
   );
-
 
 /*++
 
@@ -84,11 +74,9 @@ Returns:
 **/
 typedef
 VOID *
-(EFIAPI *EMU_PEI_THUNK_INTERFACE) (
+(EFIAPI *EMU_PEI_THUNK_INTERFACE)(
   VOID
   );
-
-
 
 /*++
 
@@ -108,20 +96,24 @@ Returns:
 **/
 typedef
 EFI_STATUS
-(EFIAPI *EMU_PEI_LOAD_FILE) (
+(EFIAPI *EMU_PEI_LOAD_FILE)(
   VOID                  *Pe32Data,
   EFI_PHYSICAL_ADDRESS  *ImageAddress,
   UINT64                *ImageSize,
   EFI_PHYSICAL_ADDRESS  *EntryPoint
   );
 
-
 typedef struct {
-  EMU_PEI_AUTOSCAN                  MemoryAutoScan;
-  EMU_PEI_FD_INFORMATION            FirmwareDevices;
-  EMU_PEI_THUNK_INTERFACE           Thunk;
+  EMU_PEI_AUTOSCAN           MemoryAutoScan;
+  EMU_PEI_FD_INFORMATION     FirmwareDevices;
+  EMU_PEI_THUNK_INTERFACE    Thunk;
+  INTN                       Argc;
+  CHAR8                      **Argv;
+  CHAR8                      **Envp;
+  UINTN                      PersistentMemorySize;
+  UINT8                      PersistentMemory[0];
 } EMU_THUNK_PPI;
 
-extern EFI_GUID gEmuThunkPpiGuid;
+extern EFI_GUID  gEmuThunkPpiGuid;
 
 #endif

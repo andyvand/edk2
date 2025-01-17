@@ -35,7 +35,7 @@ PCCTS_H=../h
 #
 #$(LIBS: = +^
 #)
-#$(DEF_FILE) $(LFLAGS) ;
+#$(DEF_FILE) $(LDFLAGS) ;
 #<<
 #        bind $@ c:\os2\doscalls.lib
 #        copy *.exe ..\bin
@@ -59,7 +59,7 @@ PCCTS_H=../h
 #$@ /Tde /c
 #
 #$(LIBS)
-#$(DEF_FILE) $(LFLAGS) ;
+#$(DEF_FILE) $(LDFLAGS) ;
 #|
 #        copy *.exe ..\bin
 #
@@ -83,7 +83,7 @@ PCCTS_H=../h
 #
 #$(LIBS: = +^
 #)
-#$(DEF_FILE) $(LFLAGS) ;
+#$(DEF_FILE) $(LDFLAGS) ;
 #<<
 #        copy *.exe ..\bin
 #
@@ -114,11 +114,17 @@ PCCTS_H=../h
 #
 #   UNIX
 #
-CC=cc
+CLANG:=$(shell $(CC) --version | grep clang)
+ifneq ($(CLANG),)
+CC?=$(CLANG_BIN)clang
+else ifeq ($(origin CC),default)
+CC=gcc
+endif
 COPT=-O
 ANTLR=${BIN_DIR}/antlr
 DLG=${BIN_DIR}/dlg
 CFLAGS= $(COPT) -I. -I$(SET) -I$(PCCTS_H) -DUSER_ZZSYN -DZZLEXBUFSIZE=65536
+CPPFLAGS=
 OBJ_EXT=o
 OUT_OBJ = -o
 OBJ = dlg_p.o dlg_a.o main.o err.o set.o support.o output.o \
@@ -147,6 +153,9 @@ main.$(OBJ_EXT) : main.c dlg.h
 
 set.$(OBJ_EXT) : $(SET)/set.c
 	$(CC) -c $(CFLAGS) $(SET)/set.c
+
+%.o : %.c 
+	$(CC) -c $(CFLAGS) $(CPPFLAGS) $< -o $@
 
 lint:
 	lint *.c
